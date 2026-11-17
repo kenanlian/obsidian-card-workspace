@@ -3,34 +3,31 @@
   import FolderCardPanel from "./FolderCardPanel.svelte";
   import NavigationPane from "./NavigationPane.svelte";
   import type { PanelModelState } from "./panel-model";
-  import type { StreamCommand, StreamPanelModel, StreamPanelState } from "./stream-panel-model";
+  import type { StreamCommand, StreamPanelEntry, StreamPanelModel, StreamPanelState } from "./stream-panel-model";
   interface Props {
     model: StreamPanelModel;
     onSelect?: (id: string) => void;
     onCommand?: (id: string, command: StreamCommand, anchor?: HTMLElement) => void;
     onCreate?: () => void;
     onReopen?: () => void;
-    onDirection?: (direction: "horizontal" | "vertical") => void;
     onResize?: (width: number, height: number) => void;
-    onResizePair?: (firstId: string, secondId: string, deltaPx: number) => void;
-    onReorder?: (id: string, delta: -1 | 1) => void;
+    onStreamWidth?: (id: string, width: number) => void;
+    onMove?: (id: string, index: number) => void;
     onToggleNav?: () => void;
   }
-  let { model, onSelect, onCommand, onCreate, onReopen, onDirection, onResize, onResizePair, onReorder, onToggleNav }: Props = $props();
+  let { model, onSelect, onCommand, onCreate, onReopen, onResize, onStreamWidth, onMove, onToggleNav }: Props = $props();
   let workspace = $state.raw<StreamPanelState>(untrack(() => model.getState()));
   let navState = $state.raw<PanelModelState | null>(null);
-  let compactListOpen = $state(false);
   const labels = $derived(workspace.labels);
-  const direction = $derived(workspace.direction);
   const navigationModel = $derived(workspace.navPanelModel);
-  const expanded = $derived(workspace.entries.filter(entry => entry.expanded));
+  const items = $derived(workspace.entries.filter(entry => entry.display !== "hidden"));
+  const firstStreamId = $derived(items.find(entry => entry.display === "stream")?.id ?? null);
+  const multiple = $derived(items.length > 1);
   const single = $derived(workspace.singlePane || navState?.nav.layoutMode === "single");
   const showSources = $derived(workspace.navigationVisible && navState !== null && (!single || navState.nav.visible));
   const showStage = $derived(!single || !showSources);
-  const showList = $derived(!single || showSources || compactListOpen);
   const instanceId = $props.id();
   const helpId = `${instanceId}-resize-help`;
-  let listEl: HTMLElement | undefined = $state();
   let stageEl: HTMLDivElement | undefined = $state();
   $effect(() => {
     const currentModel = model;
@@ -56,114 +53,165 @@
     return { destroy: () => observer.disconnect() };
   }
   $effect(() => {
-    // Source navigation and compact list change the actual space available to streams.
-    void showStage; void showSources; void showList; void direction;
+    // Source navigation changes the actual space available to streams.
+    void showStage; void showSources;
     const node = stageEl;
     if (node && showStage) untrack(() => { if (node.clientWidth > 0 && node.clientHeight > 0) onResize?.(node.clientWidth, node.clientHeight); });
   });
-  function listKey(event: KeyboardEvent, id: string) {
-    if (event.target !== event.currentTarget) return;
-    const buttons = Array.from(listEl?.querySelectorAll<HTMLButtonElement>(".fce-stream-select") ?? []);
-    const index = buttons.indexOf(event.currentTarget as HTMLButtonElement);
-    let next = index;
-    if (event.key === "ArrowDown") next = Math.min(buttons.length - 1, index + 1);
-    else if (event.key === "ArrowUp") next = Math.max(0, index - 1);
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = buttons.length - 1;
-    else if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
-      event.preventDefault(); onCommand?.(id, "manage", event.currentTarget as HTMLElement); return;
-    } else return;
-    event.preventDefault(); buttons[next]?.focus();
+
+  function itemElements(): HTMLElement[] {
+    return Array.from(stageEl?.querySelectorAll<HTMLElement>("[data-stream-item]") ?? []);
   }
-  let dragging: { pointerId: number; first: string; second: string; position: number } | null = null;
-  function startResize(event: PointerEvent, first: string, second: string) {
+
+  // Streams chosen by pointer or focus are already in view; programmatic targets are revealed.
+  let locallySelectedId: string | null = null;
+  let revealedId: string | null = null;
+  function selectLocally(entry: StreamPanelEntry): void {
+    if (entry.current) return;
+    locallySelectedId = entry.id;
+    onSelect?.(entry.id);
+  }
+  $effect(() => {
+    const id = workspace.currentStreamId;
+    untrack(() => {
+      if (id === revealedId) return;
+      revealedId = id;
+      const local = locallySelectedId === id;
+      locallySelectedId = null;
+      const stage = stageEl;
+      const node = id && !local ? itemElements().find(element => element.dataset.streamItem === id) : undefined;
+      if (!stage || !node) return;
+      const bounds = stage.getBoundingClientRect(), rect = node.getBoundingClientRect();
+      if (rect.left < bounds.left) stage.scrollLeft -= bounds.left - rect.left;
+      else if (rect.right > bounds.right) stage.scrollLeft += Math.min(rect.right - bounds.right, rect.left - bounds.left);
+    });
+  });
+
+  let resizing: { pointerId: number; id: string; startX: number; startWidth: number } | null = null;
+  function startResize(event: PointerEvent, entry: StreamPanelEntry) {
     if (event.button !== 0) return;
     event.preventDefault();
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-    dragging = { pointerId: event.pointerId, first, second, position: workspace.direction === "horizontal" ? event.clientX : event.clientY };
+    resizing = { pointerId: event.pointerId, id: entry.id, startX: event.clientX, startWidth: entry.width };
   }
   function moveResize(event: PointerEvent) {
-    if (!dragging || dragging.pointerId !== event.pointerId) return;
-    const position = workspace.direction === "horizontal" ? event.clientX : event.clientY;
-    onResizePair?.(dragging.first, dragging.second, position - dragging.position);
-    dragging.position = position;
+    if (!resizing || resizing.pointerId !== event.pointerId) return;
+    onStreamWidth?.(resizing.id, resizing.startWidth + event.clientX - resizing.startX);
   }
-  function resizeKey(event: KeyboardEvent, first: string, second: string) {
-    const positive = workspace.direction === "horizontal" ? "ArrowRight" : "ArrowDown";
-    const negative = workspace.direction === "horizontal" ? "ArrowLeft" : "ArrowUp";
-    if (event.key !== positive && event.key !== negative) return;
-    event.preventDefault(); onResizePair?.(first, second, (event.key === positive ? 1 : -1) * (event.shiftKey ? 48 : 16));
+  function resizeKey(event: KeyboardEvent, entry: StreamPanelEntry) {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    onStreamWidth?.(entry.id, entry.width + (event.key === "ArrowRight" ? 1 : -1) * (event.shiftKey ? 48 : 16));
   }
+
+  // Dragging a stream title reorders streams; a press without movement keeps its click.
+  let reorder: { pointerId: number; id: string; startX: number; active: boolean; doc: Document } | null = null;
+  let draggingId = $state<string | null>(null);
+  let dropIndex = $state<number | null>(null);
+  let suppressClick = false;
+  const dropTargets = $derived.by(() => {
+    if (draggingId === null || dropIndex === null) return { before: null, after: null };
+    const others = items.filter(entry => entry.id !== draggingId);
+    return dropIndex < others.length ? { before: others[dropIndex].id, after: null } : { before: null, after: others.at(-1)?.id ?? null };
+  });
+  function startReorder(event: PointerEvent, id: string) {
+    if (event.button !== 0 || reorder || !(event.target instanceof Element) || !event.target.closest(".fce-stream-switcher, .fce-stream-spine")) return;
+    const doc = stageEl?.ownerDocument;
+    if (!doc) return;
+    reorder = { pointerId: event.pointerId, id, startX: event.clientX, active: false, doc };
+    doc.addEventListener("pointermove", moveReorder);
+    doc.addEventListener("pointerup", endReorder);
+    doc.addEventListener("pointercancel", stopReorder);
+  }
+  function moveReorder(event: PointerEvent) {
+    const session = reorder;
+    if (!session || event.pointerId !== session.pointerId) return;
+    if (!session.active && Math.abs(event.clientX - session.startX) < 6) return;
+    session.active = true; draggingId = session.id;
+    dropIndex = itemElements().filter(element => element.dataset.streamItem !== session.id).filter(element => {
+      const rect = element.getBoundingClientRect();
+      return rect.left + rect.width / 2 < event.clientX;
+    }).length;
+  }
+  function endReorder(event: PointerEvent) {
+    const session = reorder;
+    if (!session || event.pointerId !== session.pointerId) return;
+    const index = dropIndex;
+    stopReorder();
+    if (!session.active) return;
+    suppressClick = true;
+    session.doc.defaultView?.setTimeout(() => { suppressClick = false; }, 0);
+    if (index !== null) onMove?.(session.id, index);
+  }
+  function stopReorder() {
+    const doc = reorder?.doc;
+    doc?.removeEventListener("pointermove", moveReorder);
+    doc?.removeEventListener("pointerup", endReorder);
+    doc?.removeEventListener("pointercancel", stopReorder);
+    reorder = null; draggingId = null; dropIndex = null;
+  }
+  function swallowDragClick(event: MouseEvent) {
+    if (!suppressClick) return;
+    suppressClick = false;
+    event.preventDefault(); event.stopPropagation();
+  }
+  $effect(() => () => untrack(stopReorder));
 </script>
 
 <div class="fce-stream-workspace" class:is-single={single} class:is-source-visible={showSources} use:measureRoot>
-  <div class="fce-stream-workspace-bar">
-    <button type="button" class="fce-stream-list-toggle" aria-expanded={showList} onclick={() => { compactListOpen = !compactListOpen; }}>{labels.streams}</button>
-    {#if workspace.currentStreamId === null}<span class="fce-stream-status" role="status">{labels.noCurrent}</span>{/if}
-    <button type="button" title={labels.create} aria-label={labels.create} onclick={onCreate} disabled={workspace.unsupported}>＋</button>
-    <button type="button" title={labels.reopen} aria-label={labels.reopen} onclick={onReopen} disabled={workspace.recentlyClosedCount === 0 || workspace.unsupported}>↶</button>
-    <button type="button" aria-label={labels.horizontal} aria-pressed={workspace.direction === "horizontal"} onclick={() => onDirection?.("horizontal")} disabled={workspace.unsupported}>↔</button>
-    <button type="button" aria-label={labels.vertical} aria-pressed={workspace.direction === "vertical"} onclick={() => onDirection?.("vertical")} disabled={workspace.unsupported}>↕</button>
-    <button type="button" aria-label={labels.toggleNavigation} aria-pressed={showSources} onclick={onToggleNav}>☰</button>
-  </div>
-  <div class="fce-stream-workspace-body">
-    {#if showList || showSources}
-      <aside class="fce-stream-navigation fce-shell" data-fce-font-size={navState?.appearance.uiFontSize ?? "default"} data-fce-density={navState?.appearance.uiDensity ?? "default"} style={`--fce-stream-nav-width: ${navState?.nav.paneWidth ?? 240}px`} aria-label={labels.streams}>
-        {#if showList}
-          <div class="fce-stream-list" bind:this={listEl}>
-            {#each workspace.entries as entry, index (entry.id)}
-              <div class="fce-stream-list-entry" class:is-current={entry.current} data-stream-list-id={entry.id}>
-                <button type="button" class="fce-stream-select" aria-current={entry.current ? "true" : undefined} onclick={() => onSelect?.(entry.id)} onkeydown={event => listKey(event, entry.id)} oncontextmenu={event => { event.preventDefault(); onCommand?.(entry.id, "manage", event.currentTarget); }}>
-                  <span class="fce-stream-title">{entry.title}</span>
-                  <span class="fce-stream-source">{entry.sourceLabel}</span>
-                  {#if entry.current}<span class="fce-stream-status">{labels.current}</span>{/if}
-                  {#if entry.autoCollapsed}<span class="fce-stream-status">{labels.autoCollapsed}</span>{:else if !entry.expanded}<span class="fce-stream-status">{labels.collapsed}</span>{/if}
-                </button>
-                <div class="fce-stream-entry-actions">
-                  <button type="button" aria-label={labels.showOnly} title={labels.showOnly} onclick={() => onCommand?.(entry.id, "show-only")}>▣</button>
-                  <button type="button" aria-label={labels.tile} title={labels.tile} onclick={() => onCommand?.(entry.id, "tile")}>▥</button>
-                  <button type="button" aria-label={labels.collapse} title={labels.collapse} disabled={!entry.expanded} onclick={() => onCommand?.(entry.id, "collapse")}>−</button>
-                  <button type="button" aria-label={labels.manage} title={labels.manage} onclick={event => onCommand?.(entry.id, "manage", event.currentTarget)}>⋯</button>
-                  <button type="button" aria-label={labels.moveEarlier} title={labels.moveEarlier} disabled={index === 0} onclick={() => onReorder?.(entry.id, -1)}>↑</button>
-                  <button type="button" aria-label={labels.moveLater} title={labels.moveLater} disabled={index === workspace.entries.length - 1} onclick={() => onReorder?.(entry.id, 1)}>↓</button>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {/if}
-        {#if showSources && navState}
-          <NavigationPane {...workspace.navProps} strings={navState.strings} nav={{ ...navState.nav, visible: true }} scope={navState.scope} viewMode={navState.projection.viewMode} activeFilterTags={navState.projection.activeFilterTags} />
-        {/if}
-      </aside>
+  {#if showSources && navState}
+    <div class="fce-stream-navigation fce-shell" data-fce-font-size={navState.appearance.uiFontSize ?? "default"} data-fce-density={navState.appearance.uiDensity ?? "default"} style={`--fce-stream-nav-width: ${navState.nav.paneWidth}px`}>
+      <NavigationPane {...workspace.navProps} strings={navState.strings} nav={{ ...navState.nav, visible: true }} scope={navState.scope} viewMode={navState.projection.viewMode} activeFilterTags={navState.projection.activeFilterTags} />
+    </div>
+  {/if}
+  <div class="fce-stream-stage" class:is-hidden={!showStage} class:has-multiple={multiple} class:is-reordering={draggingId !== null} bind:this={stageEl} use:measureStage onclickcapture={swallowDragClick}>
+    {#if workspace.unsupported}
+      <div class="fce-stream-empty" role="status"><p>{labels.unsupported}</p><button type="button" onclick={onCreate}>{labels.recovery}</button></div>
+    {:else if items.length === 0}
+      <div class="fce-stream-empty">
+        <p>{labels.empty}</p>
+        <button type="button" onclick={onCreate}>{labels.create}</button>
+        {#if workspace.recentlyClosedCount > 0}<button type="button" onclick={onReopen}>{labels.reopen}</button>{/if}
+        {#if !showSources}<button type="button" onclick={onToggleNav}>{labels.toggleNavigation}</button>{/if}
+      </div>
     {/if}
-    <div class="fce-stream-stage" class:is-hidden={!showStage} class:is-vertical={workspace.direction === "vertical"} bind:this={stageEl} use:measureStage>
-      {#if workspace.unsupported}
-        <div class="fce-stream-empty" role="status"><p>{labels.unsupported}</p><button type="button" onclick={onCreate}>{labels.recovery}</button></div>
-      {:else if expanded.length === 0}
-        <div class="fce-stream-empty"><p>{labels.empty}</p><button type="button" onclick={onCreate}>{labels.create}</button>{#if workspace.recentlyClosedCount > 0}<button type="button" onclick={onReopen}>{labels.reopen}</button>{/if}</div>
-      {/if}
-      {#each expanded as entry, index (entry.id)}
-        <section class="fce-stream-panel" class:is-current={entry.current} data-stream-id={entry.id} aria-label={entry.title} style={entry.size === undefined ? `flex: ${entry.weight} 1 0px` : `flex: 0 0 ${entry.size}px`} onpointerdown={() => onSelect?.(entry.id)} onfocusin={() => onSelect?.(entry.id)}>
-          <header class="fce-stream-panel-header">
-            <button type="button" class="fce-stream-title" onclick={() => onSelect?.(entry.id)}>{entry.title}{#if entry.current}<span class="fce-stream-status"> · {labels.current}</span>{/if}</button>
-            <button type="button" aria-label={labels.collapse} title={labels.collapse} onclick={() => onCommand?.(entry.id, "collapse")}>−</button>
-            <button type="button" aria-label={labels.manage} title={labels.manage} onclick={event => onCommand?.(entry.id, "manage", event.currentTarget)}>⋯</button>
-            <button type="button" aria-label={labels.close} title={labels.close} onclick={() => onCommand?.(entry.id, "close")}>×</button>
-          </header>
+    {#each items as entry (entry.id)}
+      {#if entry.display === "spine"}
+        <button type="button" class="fce-stream-spine" class:is-drop-before={dropTargets.before === entry.id} class:is-drop-after={dropTargets.after === entry.id} class:is-dragging={draggingId === entry.id}
+          data-stream-item={entry.id} style={`flex: 0 0 ${entry.width}px`} aria-label={`${labels.expand}: ${entry.title}`} title={entry.title}
+          onclick={() => onSelect?.(entry.id)} onpointerdown={event => startReorder(event, entry.id)}
+          oncontextmenu={event => { event.preventDefault(); onCommand?.(entry.id, "menu", event.currentTarget); }}>
+          <span class="fce-stream-spine-title">{entry.title}</span>
+        </button>
+      {:else}
+        <section class="fce-stream-panel" class:is-current={entry.current} class:is-drop-before={dropTargets.before === entry.id} class:is-drop-after={dropTargets.after === entry.id} class:is-dragging={draggingId === entry.id}
+          data-stream-id={entry.id} data-stream-item={entry.id} aria-label={entry.title} aria-current={multiple && entry.current ? "true" : undefined} style={`flex: 0 0 ${entry.width}px`}
+          onpointerdown={event => { selectLocally(entry); startReorder(event, entry.id); }} onfocusin={() => selectLocally(entry)}>
+          {#if !entry.panelModel}
+            <div class="fce-stream-fallback-bar">
+              <button type="button" class="fce-stream-switcher" aria-haspopup="menu" onclick={event => onCommand?.(entry.id, "menu", event.currentTarget)}>{entry.title}</button>
+              <button type="button" class="clickable-icon" aria-label={labels.close} title={labels.close} onclick={() => onCommand?.(entry.id, "close")}>×</button>
+            </div>
+          {/if}
           {#if entry.error}<div class="fce-stream-error" role="alert">{entry.error}</div>{/if}
           <div class="fce-stream-panel-content" inert={entry.pending} aria-busy={entry.pending}>
-            {#if entry.panelModel}<FolderCardPanel {...entry.props} panelModel={entry.panelModel} showNavigation={false} onShellResize={undefined} />{:else if entry.pending}<div class="fce-stream-empty" role="status">{labels.pending}</div>{/if}
+            {#if entry.panelModel}
+              <FolderCardPanel {...entry.props} panelModel={entry.panelModel} showNavigation={false} onShellResize={undefined}
+                stream={{ title: entry.customTitle, ordinal: entry.ordinal, closable: workspace.entries.length > 1, showNavToggle: single || entry.id === firstStreamId, switcherLabel: labels.switcher, closeLabel: labels.close }}
+                onStreamMenu={(anchor: HTMLElement) => onCommand?.(entry.id, "menu", anchor)} onStreamClose={() => onCommand?.(entry.id, "close")} />
+            {:else if entry.pending}<div class="fce-stream-empty" role="status">{labels.pending}</div>{/if}
           </div>
         </section>
-        {#if index < expanded.length - 1}
-          {@const next = expanded[index + 1]}
+        {#if entry.separator}
           <!-- Focusable ARIA window splitter follows the host navigation resize pattern. -->
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          <div class="fce-stream-splitter" role="separator" tabindex="0" aria-label={labels.resize} aria-describedby={helpId} aria-orientation={workspace.direction === "horizontal" ? "vertical" : "horizontal"} aria-valuenow={Math.round(entry.size ?? entry.weight * 100)} onkeydown={event => resizeKey(event, entry.id, next.id)} onpointerdown={event => startResize(event, entry.id, next.id)} onpointermove={moveResize} onpointerup={() => { dragging = null; }} onpointercancel={() => { dragging = null; }}></div>
+          <div class="fce-stream-splitter" role="separator" tabindex="0" aria-label={`${labels.resize}: ${entry.title}`} aria-describedby={helpId} aria-orientation="vertical" aria-valuenow={Math.round(entry.width)}
+            onkeydown={event => resizeKey(event, entry)} onpointerdown={event => startResize(event, entry)} onpointermove={moveResize}
+            onpointerup={() => { resizing = null; }} onpointercancel={() => { resizing = null; }}></div>
         {/if}
-      {/each}
-    </div>
+      {/if}
+    {/each}
   </div>
   <span class="fce-sr-only" id={helpId}>{labels.resizeHelp}</span>
 </div>

@@ -7,6 +7,7 @@ import type { StreamSnapshot } from "./stream-state";
 import { CardStreamRuntime } from "./CardStreamRuntime";
 import { createCardBox } from "./card-boxes";
 import { StreamSourcePicker } from "./modals/StreamSourcePicker";
+import { getStreamUiStrings } from "./stream-ui-strings";
 
 vi.mock("./StreamWorkspacePanel.svelte", () => ({ default: () => ({ teardown() {} }) }));
 registerFolderCardView(FolderCardView);
@@ -344,5 +345,59 @@ describe("desktop leaf stream integration", () => {
     await vi.waitFor(() => expect(view.panelModel.getState().cards.records).toHaveLength(1));
     expect(view.modules.bulk.getSelectedPaths().has(file.path)).toBe(true);
     expect(restored).toHaveBeenCalledWith(anchor, "folder:notes:true");
+  });
+
+  it("opens a navigation source in a new stream from the new-stream gesture", async () => {
+    const { view } = await setup(); const first = view.streams.getState().currentStreamId!;
+    expect(view.streamPanelModel.getState().navProps.newStreamGesture).toBe(true);
+    const root = view.modules.navLayout.getProjection().rows.find(value => value.kind === "folder" && value.folderPath === "")!;
+    view.handleNavigationIntent({ type: "activate", rowId: root.id, mode: "new-stream" });
+    await view.waitForForeground();
+    expect(view.streams.getState().streams.map(value => value.id)[0]).toBe(first);
+    expect(view.streams.getState().streams).toHaveLength(2);
+    expect(stream(view, first).scope).toEqual(createFolderScope("notes", true));
+    expect(view.getCardScope()).toEqual(createFolderScope("", true));
+  });
+
+  it("switches streams and runs stream commands from one menu", async () => {
+    const { view } = await setup(); const first = view.streams.getState().currentStreamId!;
+    const second = (await view.createStream({ scope: createFolderScope("", true) }))!;
+    view.streams.setExpanded(first, false);
+    const labels = getStreamUiStrings("en");
+    mockState.menuInstances.length = 0;
+    view.handleStreamCommand(second, "menu", { getBoundingClientRect: () => ({ left: 4, bottom: 8 }), ownerDocument: {} } as unknown as HTMLElement);
+    const menu = mockState.menuInstances.at(-1)!;
+    const items = menu.items.filter(item => item.kind === "item");
+    const find = (title: string) => items.find(item => item.title === title)!;
+    expect(items.slice(0, 2).map(item => [item.title, item.checked])).toEqual([[`notes · ${labels.collapsed}`, false], ["/", true]]);
+    expect(items.slice(2).map(item => item.title)).toEqual([labels.create, labels.duplicate, labels.reopen, labels.maximize, labels.collapse,
+      labels.moveLeft, labels.moveRight, labels.rename, labels.moveToPane, labels.copyToPane, labels.close]);
+    expect([find(labels.reopen).disabled, find(labels.moveLeft).disabled, find(labels.moveRight).disabled]).toEqual([true, false, true]);
+    expect(menu.showAtPosition).toHaveBeenCalledWith({ x: 4, y: 8 }, {});
+    find(labels.maximize).clickHandler!();
+    expect(view.streams.getState()).toMatchObject({ maximizedStreamId: second, visibleIds: [second] });
+    items[0].clickHandler!(); await view.waitForForeground();
+    expect(view.streams.getState()).toMatchObject({ currentStreamId: first, maximizedStreamId: first });
+    expect(view.getRuntimeDiagnostics().streams?.active).toBe(1);
+    view.handleStreamCommand(first, "maximize");
+    expect(view.streams.getState().visibleIds).toEqual([first, second]);
+  });
+
+  it("starts new streams as one column beside frozen streams and widens only a hosting sidebar dock", async () => {
+    const { view, app } = await setup();
+    const dock = { size: 600, collapsed: false, setSize: vi.fn(function (this: { size: number }, size: number) { this.size = size; }) };
+    app.workspace.leftSplit = dock; (view.leaf as unknown as { getRoot: () => unknown }).getRoot = () => dock;
+    vi.stubGlobal("innerWidth", 1800);
+    const second = (await view.createStream({ scope: createFolderScope("", true) }))!;
+    expect(view.streams.getState().streams.map(value => value.width)).toEqual([1200, 320]);
+    expect(dock.setSize).toHaveBeenLastCalledWith(932);
+    view.handleStreamCommand(second, "duplicate");
+    expect(view.streams.getState().streams.map(value => value.width)).toEqual([1200, 320, 320]);
+    expect(dock.setSize).toHaveBeenLastCalledWith(1400);
+    dock.setSize.mockClear(); dock.collapsed = true;
+    view.handleStreamCommand(second, "duplicate");
+    (view.leaf as unknown as { getRoot: () => unknown }).getRoot = () => ({}); dock.collapsed = false;
+    view.handleStreamCommand(second, "duplicate");
+    expect(dock.setSize).not.toHaveBeenCalled();
   });
 });

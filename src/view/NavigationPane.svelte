@@ -40,7 +40,9 @@
     onNavContextMenu?: (payload: NavContextMenuPayload) => void;
     onNavigationIntent?: (payload: NavigationIntent) => void;
     onNavPaneResize?: (width: number) => void;
-    onToggleNavPane?: () => void; [key: string]: unknown;
+    onToggleNavPane?: () => void;
+    /** Middle-click, or Ctrl/Cmd-click outside filter rows, asks the host for a new card stream. */
+    newStreamGesture?: boolean; [key: string]: unknown;
   }
   const EMPTY_NAV: PanelNavState = {
     folderTree: [], favorites: [], boxSummaries: [], paneWidth: 240, layoutMode: "dual", visible: true,
@@ -59,7 +61,7 @@
     dragSession = new DragSession(), onDropCards,
     strings = getUiStrings("en"), nav = EMPTY_NAV, scope = EMPTY_SCOPE, activeFilterTags = [],
     onFolderAction, onFilterChange, onPropertyCommand, onBoxCommand,
-    onNavContextMenu, onNavigationIntent, onNavPaneResize, onToggleNavPane,
+    onNavContextMenu, onNavigationIntent, onNavPaneResize, onToggleNavPane, newStreamGesture = false,
   }: Props = $props();
   const labels = $derived(strings.toolbar.navPane);
   const rows = $derived(nav.projection.rows);
@@ -243,11 +245,15 @@
     else void tick().then(() => rowElements.get(rowId)?.focus());
   }
   function activate(event: MouseEvent, row: NavigationRow): void {
+    const middle = event.button === 1;
+    if (middle && !newStreamGesture) return;
     if (row.disabled || performance.now() < suppressClickUntil) { event.preventDefault(); return; }
+    if (middle) event.preventDefault();
     focusRow(row.id);
-    const additive = (row.kind === "tag" || row.kind === "property-value" || (row.kind === "favorite" && row.favorite.kind === "tag"))
-      && (event.ctrlKey || event.metaKey);
-    emitIntent({ type: "activate", rowId: row.id, mode: additive ? "additive" : "ordinary" });
+    const filterRow = row.kind === "tag" || row.kind === "property-value" || (row.kind === "favorite" && row.favorite.kind === "tag");
+    const modifier = event.ctrlKey || event.metaKey;
+    const mode = newStreamGesture && (middle || (modifier && !filterRow)) ? "new-stream" : filterRow && modifier ? "additive" : "ordinary";
+    emitIntent({ type: "activate", rowId: row.id, mode });
   }
   function toggleExpansion(event: MouseEvent, row: NavigationRow): void {
     event.preventDefault(); event.stopPropagation();

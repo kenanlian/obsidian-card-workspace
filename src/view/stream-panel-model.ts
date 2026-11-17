@@ -2,22 +2,25 @@ import type { PanelModel } from "./panel-model";
 import type { StreamUiStrings } from "./stream-ui-strings";
 export interface StreamPanelEntry {
   id: string;
+  /** Complete display title, used by spines and menus. */
   title: string;
-  sourceLabel: string;
-  expanded: boolean;
-  autoCollapsed: boolean;
+  /** The user's name for the stream; toolbars otherwise show their scope label. */
+  customTitle: string | null;
+  /** Distinguishes unnamed streams over the same source. */
+  ordinal: number | null;
+  display: "stream" | "spine" | "hidden";
+  width: number;
+  separator: boolean;
   current: boolean;
   pending: boolean;
   error?: string;
   panelModel: PanelModel | null;
   props: Record<string, unknown>;
-  weight: number;
-  size?: number;
 }
 export interface StreamPanelState {
   entries: readonly StreamPanelEntry[];
   currentStreamId: string | null;
-  direction: "horizontal" | "vertical";
+  maximizedStreamId: string | null;
   navigationVisible: boolean;
   singlePane: boolean;
   navPanelModel: PanelModel | null;
@@ -26,7 +29,17 @@ export interface StreamPanelState {
   recentlyClosedCount: number;
   unsupported: boolean;
 }
-export type StreamCommand = "show-only" | "tile" | "collapse" | "duplicate" | "rename" | "close" | "move-to-pane" | "copy-to-pane" | "manage";
+/** Stream identity and controls rendered inside a stream's own toolbar. */
+export interface StreamToolbarState {
+  title: string | null;
+  ordinal: number | null;
+  closable: boolean;
+  showNavToggle: boolean;
+  switcherLabel: string;
+  closeLabel: string;
+}
+export type StreamCommand = "menu" | "maximize" | "collapse" | "duplicate" | "rename" | "close"
+  | "move-left" | "move-right" | "move-to-pane" | "copy-to-pane";
 export interface StreamPanelModel {
   getState(): StreamPanelState;
   subscribe(listener: (state: StreamPanelState) => void): () => void;

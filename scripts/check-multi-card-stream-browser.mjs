@@ -32,16 +32,20 @@ window.renderStreams=async(width=1400,height=760,legacy=false)=>{
  if(component)await unmount(component);
  const target=document.querySelector('#mount');target.style.width=width+'px';target.style.height=height+'px';
  window.events=[];window.stageSizes=[];window.rootWidths=[];
- const entries=['one','two','three','four'].map((id,i)=>({id,title:'Stream '+id,sourceLabel:'Folder '+id,expanded:i<3,autoCollapsed:i===3,current:i===0,pending:false,panelModel:makePanel(id),props:{},weight:1}));
- const model=createStreamPanelModel({entries,currentStreamId:'one',direction:'horizontal',navigationVisible:true,singlePane:false,navPanelModel:entries[0].panelModel,navProps:{onShellResize:w=>{window.rootWidths.push(w);const old=model.getState();if(old.singlePane!==(w<640))model.setState({...old,singlePane:w<640});}},labels:getStreamUiStrings('en'),recentlyClosedCount:1,unsupported:false});
+ const toggleNav=()=>update({navigationVisible:!model.getState().navigationVisible});
+ const layout=[['one','stream',420,true],['two','stream',420,true],['three','spine',28,false],['four','stream',700,true]];
+ const entries=layout.map(([id,display,width,separator],i)=>({id,title:'Folder '+id,customTitle:null,ordinal:null,display,width,separator,current:i===0,pending:false,panelModel:makePanel(id),props:{onToggleNavPane:()=>toggleNav()}}));
+ const model=createStreamPanelModel({entries,currentStreamId:'one',maximizedStreamId:null,navigationVisible:true,singlePane:false,navPanelModel:entries[0].panelModel,navProps:{onShellResize:w=>{window.rootWidths.push(w);const old=model.getState();if(old.singlePane!==(w<640))model.setState({...old,singlePane:w<640});}},labels:getStreamUiStrings('en'),recentlyClosedCount:1,unsupported:false});
  window.streamModel=model;
  const update=changes=>model.setState({...model.getState(),...changes});
  window.updateStreams=update;
+ const select=id=>{const old=model.getState();if(old.currentStreamId===id)return;update({currentStreamId:id,entries:old.entries.map(e=>({...e,current:e.id===id})),navPanelModel:old.entries.find(e=>e.id===id).panelModel});};
+ window.selectStream=select;
  component=mount(legacy?Legacy:Panel,{target,props:legacy?{panelModel:entries[0].panelModel,runtimeDevice:'phone'}:{model,
- onSelect:id=>{const old=model.getState();if(old.currentStreamId===id)return;update({currentStreamId:id,entries:old.entries.map(e=>({...e,current:e.id===id})),navPanelModel:old.entries.find(e=>e.id===id).panelModel});},
+ onSelect:id=>{window.events.push({command:'select',id});select(id);},
  onCommand:(id,command)=>window.events.push({id,command}),onCreate:()=>window.events.push({command:'create'}),onReopen:()=>window.events.push({command:'reopen'}),
- onToggleNav:()=>update({navigationVisible:!model.getState().navigationVisible}),onDirection:direction=>update({direction}),
- onResize:(width,height)=>window.stageSizes.push({width,height}),onResizePair:(first,second,delta)=>window.events.push({command:'resize',first,second,delta}),onReorder:(id,delta)=>window.events.push({command:'reorder',id,delta})
+ onToggleNav:toggleNav,onResize:(width,height)=>window.stageSizes.push({width,height}),
+ onStreamWidth:(id,width)=>window.events.push({command:'width',id,width}),onMove:(id,index)=>window.events.push({command:'move',id,index})
  }});await tick();await new Promise(requestAnimationFrame);
 };` }, bundle: true, write: false, format: 'iife', platform: 'browser', conditions: ['browser'], plugins: [sveltePlugin({ compilerOptions: { dev: false } })], alias: { obsidian: path.join(root, 'scripts/image-benchmark/obsidian.ts') }, logLevel: 'silent' });
 // Reuse installed Chromium even when the lockfile's Playwright revision is newer.
@@ -62,48 +66,77 @@ try {
  await page.addStyleTag({ content: await readFile('styles.css', 'utf8') });
  await page.addScriptTag({ content: bundle.outputFiles[0].text });
  await page.evaluate(() => window.renderStreams());
+ // Two columns only: no workspace bar, stream list, or per-stream header.
+ assert.equal(await page.locator('.fce-stream-workspace-bar, .fce-stream-list, .fce-stream-panel-header').count(), 0);
  assert.equal(await page.locator('.fce-stream-panel').count(), 3);
+ assert.equal(await page.locator('.fce-stream-spine').count(), 1);
  assert.equal(await page.locator('.fce-nav-pane').count(), 1);
- for (const panel of await page.locator('.fce-stream-panel').all()) { const box = await panel.boundingBox(); assert(box.width >= 240); assert(await panel.locator('.fce-card').count() > 0); }
- const stage = await page.locator('.fce-stream-stage').boundingBox();
+ for (const [id, width] of [['one', 420], ['two', 420], ['four', 700]]) {
+  const panel = page.locator(`[data-stream-id="${id}"]`);
+  assert(Math.abs((await panel.boundingBox()).width - width) <= 1, `${id} keeps its pixel width`);
+  assert(await panel.locator('.fce-card').count() > 0);
+  assert.equal(await panel.locator('.fce-stream-switcher').count(), 1);
+  assert.equal(await panel.locator('.fce-stream-close').count(), 1);
+ }
+ assert.equal(await page.locator('[data-stream-id="one"] .fce-toolbar-buttons > button[aria-pressed]').count(), 1);
+ assert.equal(await page.locator('[data-stream-id="two"] .fce-toolbar-buttons > button[aria-pressed]').count(), 0);
+ assert(Math.abs((await page.locator('.fce-stream-spine').boundingBox()).width - 28) <= 1);
+ const stageLocator = page.locator('.fce-stream-stage');
+ assert(await stageLocator.evaluate(node => node.scrollWidth > node.clientWidth), 'streams overflow into horizontal scrolling instead of shrinking');
+ const stage = await stageLocator.boundingBox();
  const reported = await page.evaluate(() => window.stageSizes.at(-1)); assert.equal(reported.width, Math.round(stage.width)); assert.equal(reported.height, Math.round(stage.height));
  assert.equal(await page.evaluate(() => window.rootWidths.at(-1)), 1400);
- await page.locator('[data-stream-list-id="two"] .fce-stream-select').click();
- assert.equal(await page.locator('[data-stream-list-id="two"] .fce-stream-select').getAttribute('aria-current'), 'true');
- // Switching target must keep the card viewport mounted and retain its scroll position.
+ // Pointer selection switches the target, keeps viewports mounted, and does not scroll the strip.
  await page.locator('[data-stream-id="one"] .fce-list').evaluate(node => { window.firstViewport = node; node.scrollTop = 300; });
- await page.locator('[data-stream-list-id="three"] .fce-stream-select').click();
+ await page.locator('[data-stream-id="two"] .fce-list').click({ position: { x: 20, y: 200 } });
+ assert.equal(await page.locator('[data-stream-id="two"]').getAttribute('aria-current'), 'true');
  assert(await page.evaluate(() => window.firstViewport === document.querySelector('[data-stream-id="one"] .fce-list') && window.firstViewport.scrollTop > 0));
- await page.locator('[data-stream-id="one"] button[aria-label="Collapse stream"]').click();
- await page.locator('[data-stream-id="one"] button[aria-label="Close stream"]').click();
- assert.deepEqual(await page.evaluate(() => window.events.slice(-2).map(event => event.command)), ['collapse', 'close']);
+ await page.locator('[data-stream-id="two"] .fce-stream-switcher').click();
+ await page.locator('[data-stream-id="two"] .fce-stream-close').click();
+ await page.locator('.fce-stream-spine').click({ button: 'right' });
+ assert.deepEqual(await page.evaluate(() => window.events.slice(-3)), [{ id: 'two', command: 'menu' }, { id: 'two', command: 'close' }, { id: 'three', command: 'menu' }]);
+ await page.locator('.fce-stream-spine').click();
+ assert.deepEqual(await page.evaluate(() => window.events.at(-1)), { command: 'select', id: 'three' });
  await page.locator('.fce-stream-splitter').first().focus(); await page.keyboard.press('ArrowRight');
- assert.deepEqual(await page.evaluate(() => window.events.at(-1)), { command: 'resize', first: 'one', second: 'two', delta: 16 });
+ assert.deepEqual(await page.evaluate(() => window.events.at(-1)), { command: 'width', id: 'one', width: 436 });
  const split = await page.locator('.fce-stream-splitter').first().boundingBox();
  await page.mouse.move(split.x + 3, split.y + 30); await page.mouse.down(); await page.mouse.move(split.x + 23, split.y + 30); await page.mouse.up();
- assert.equal(await page.evaluate(() => window.events.at(-1).delta), 20);
- await page.getByRole('button', { name: 'Toggle source navigation', exact: true }).click();
- assert.equal(await page.locator('.fce-nav-pane').count(), 0); assert.equal(await page.locator('.fce-stream-select').count(), 4);
- await page.locator('[data-stream-list-id="four"] button[aria-label="Manage stream"]').click();
- assert.equal(await page.evaluate(() => window.events.at(-1).id), 'four');
- await page.getByRole('button', { name: 'Arrange top to bottom', exact: true }).click();
- await page.locator('.fce-stream-splitter').first().focus(); await page.keyboard.press('ArrowDown');
- assert.equal(await page.evaluate(() => window.events.at(-1).delta), 16);
+ assert.deepEqual(await page.evaluate(() => window.events.at(-1)), { command: 'width', id: 'one', width: 440 });
+ // Dragging a stream's title reorders it; the click ending the drag is swallowed.
+ await stageLocator.evaluate(node => { node.scrollLeft = 0; });
+ const spine = await page.locator('.fce-stream-spine').boundingBox(), first = await page.locator('[data-stream-id="one"]').boundingBox();
+ const eventCount = await page.evaluate(() => window.events.length);
+ await page.mouse.move(spine.x + 14, spine.y + 80); await page.mouse.down();
+ await page.mouse.move(spine.x - 200, spine.y + 80, { steps: 4 }); await page.mouse.move(first.x + 20, spine.y + 80, { steps: 4 });
+ assert.equal(await page.locator('[data-stream-id="one"].is-drop-before').count(), 1);
+ await page.mouse.up();
+ assert.deepEqual(await page.evaluate(n => window.events.slice(n), eventCount), [{ command: 'move', id: 'three', index: 0 }]);
+ // A target chosen elsewhere (switcher menu, command) is scrolled into view.
+ await page.evaluate(() => window.selectStream('four')); await page.evaluate(() => new Promise(requestAnimationFrame));
+ const four = await page.locator('[data-stream-id="four"]').boundingBox(), visible = await stageLocator.boundingBox();
+ assert(four.x >= visible.x - 1 && four.x + four.width <= visible.x + visible.width + 1, 'programmatic target is revealed');
+ await page.locator('[data-stream-id="one"] .fce-toolbar-buttons > button[aria-pressed]').click();
+ assert.equal(await page.locator('.fce-nav-pane').count(), 0);
+ assert.equal(await page.locator('[data-stream-id="one"] .fce-toolbar-buttons > button[aria-pressed]').count(), 1);
+ await page.locator('[data-stream-id="one"] .fce-toolbar-buttons > button[aria-pressed]').click();
+ assert.equal(await page.locator('.fce-nav-pane').count(), 1);
  await page.evaluate(() => window.renderStreams(320, 760));
  await page.waitForSelector('.fce-stream-workspace.is-single');
- // The host owns automatic collapse; apply its compact snapshot explicitly.
- await page.evaluate(() => window.updateStreams({ entries: window.streamModel.getState().entries.map((entry, index) => ({ ...entry, expanded: index === 0, autoCollapsed: index > 0 })) }));
- assert.equal(await page.locator('.fce-stream-stage').isVisible(), false);
- await page.getByRole('button', { name: 'Toggle source navigation', exact: true }).click();
- assert.equal(await page.locator('.fce-stream-select').count(), 0);
- assert.equal(await page.locator('.fce-stream-panel').count(), 1);
+ assert.equal(await stageLocator.isVisible(), false);
+ await page.evaluate(() => window.updateStreams({ navigationVisible: false }));
+ assert.equal(await stageLocator.isVisible(), true);
+ assert.equal(await page.locator('.fce-stream-panel .fce-toolbar-buttons > button[aria-pressed]').count(), 3);
  assert.equal(await page.locator('.fce-stream-workspace').evaluate(node => node.scrollWidth <= node.clientWidth), true);
- await page.locator('.fce-stream-list-toggle').click(); assert.equal(await page.locator('.fce-stream-select').count(), 4);
- assert.equal(await page.locator('.fce-stream-workspace-body').evaluate(node => getComputedStyle(node).flexDirection), 'column');
+ await page.evaluate(() => window.updateStreams({ entries: [] }));
+ await page.getByRole('button', { name: 'New stream…', exact: true }).click();
+ await page.getByRole('button', { name: 'Reopen closed stream', exact: true }).click();
+ await page.getByRole('button', { name: 'Toggle source navigation', exact: true }).click();
+ assert.deepEqual(await page.evaluate(() => window.events.slice(-2).map(event => event.command)), ['create', 'reopen']);
+ assert.equal(await stageLocator.isVisible(), false);
  await page.evaluate(() => window.renderStreams(320, 760, true));
  assert.equal(await page.locator('.fce-stream-workspace').count(), 0); assert.equal(await page.locator('.fce-nav-pane').count(), 1);
  assert.deepEqual(errors, []);
- const result = { passed: true, checks: ['three rendered streams', 'shared navigation', 'current target and retained viewport', 'collapse and close intents', 'measured stage', 'pointer and keyboard resizing', 'hidden navigation access', 'compact sidebar', 'legacy mobile default'], browserErrors: errors };
+ const result = { passed: true, checks: ['two-column strip without extra bars', 'pixel-width streams and spines', 'horizontal overflow', 'toolbar switcher and close', 'retained viewport on target switch', 'width splitters', 'drag reorder', 'programmatic reveal', 'navigation toggle on first stream', 'compact sidebar', 'empty state', 'legacy mobile default'], browserErrors: errors };
  if (process.argv.includes('--output')) await writeFile(process.argv[process.argv.indexOf('--output') + 1], JSON.stringify(result, null, 2) + '\n');
  console.log(JSON.stringify(result));
 } finally { await browser.close(); }

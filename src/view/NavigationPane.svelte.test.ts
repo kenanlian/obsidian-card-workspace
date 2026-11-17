@@ -157,6 +157,7 @@ function render(options: {
   onMenu?: (payload: NavContextMenuPayload) => void;
   onPropertyCommand?: (payload: { command: "choose-visible" | "clear-filters" }) => void;
   onResize?: (width: number) => void;
+  newStreamGesture?: boolean;
 } = {}) {
   const target = document.createElement("div");
   target.className = "folder-card-view";
@@ -167,6 +168,7 @@ function render(options: {
     activeFilterTags: options.activeFilterTags ?? ["work"], onNavigationIntent: options.onIntent,
     onNavContextMenu: options.onMenu, onPropertyCommand: options.onPropertyCommand,
     onNavPaneResize: options.onResize, dragSession: options.dragSession, onDropCards: options.onDropCards,
+    newStreamGesture: options.newStreamGesture,
   } });
   components.push(component);
   return component;
@@ -1048,6 +1050,30 @@ describe("NavigationPane projected ARIA tree", () => {
       new MouseEvent("click", { bubbles: true, cancelable: true }),
     );
     expect(intents).toContainEqual({ type: "set-expanded", rowId: keyId, expanded: false });
+  });
+
+  it("maps middle-click and non-filter Ctrl/Cmd-click to new streams only when the host supports them", () => {
+    const intents: NavigationIntent[] = [];
+    render({ onIntent: (intent) => intents.push(intent), newStreamGesture: true });
+    row("folder:notes").dispatchEvent(new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
+    row("box:box-1").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true }));
+    row("tag:work").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
+    row("tag:work").dispatchEvent(new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
+    row("folder:notes").dispatchEvent(new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 2 }));
+    expect(intents.filter((intent) => intent.type === "activate")).toEqual([
+      { type: "activate", rowId: "folder:notes", mode: "new-stream" },
+      { type: "activate", rowId: "box:box-1", mode: "new-stream" },
+      { type: "activate", rowId: "tag:work", mode: "additive" },
+      { type: "activate", rowId: "tag:work", mode: "new-stream" },
+    ]);
+  });
+
+  it("ignores middle-click and keeps Ctrl/Cmd-click ordinary without host stream support", () => {
+    const intents: NavigationIntent[] = [];
+    render({ onIntent: (intent) => intents.push(intent) });
+    row("folder:notes").dispatchEvent(new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
+    row("folder:notes").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
+    expect(intents.filter((intent) => intent.type === "activate")).toEqual([{ type: "activate", rowId: "folder:notes", mode: "ordinary" }]);
   });
 
   it("maps property keyboard activation and expansion keys", () => {

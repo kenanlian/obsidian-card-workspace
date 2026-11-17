@@ -1,6 +1,6 @@
 # Card Workspace
 
-Desktop supports independent card streams, shared per-pane navigation, tiled comparison, and move/copy to new Obsidian panes. See [Desktop card streams](docs/multi-card-stream.md).
+Desktop supports independent card streams, shared per-pane navigation, side-by-side comparison, and move/copy to new Obsidian panes. See [Desktop card streams](docs/multi-card-stream.md).
 
 [简体中文](README.zh-CN.md)
 

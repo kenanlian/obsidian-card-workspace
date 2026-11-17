@@ -17,7 +17,7 @@ export type NavigationSemanticState =
   | "checked-filter"
   | "active-file";
 
-export type NavigationActivationMode = "ordinary" | "additive";
+export type NavigationActivationMode = "ordinary" | "additive" | "new-stream";
 
 export interface NavigationRevealRequest {
   token: number;

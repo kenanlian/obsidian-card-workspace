@@ -122,6 +122,9 @@
     runtimeDevice?: import("../runtime/platform").RuntimeDevice;
     panelModel: PanelModel;
     showNavigation?: boolean;
+    stream?: import("./stream-panel-model").StreamToolbarState;
+    onStreamMenu?: (anchor: HTMLElement) => void;
+    onStreamClose?: () => void;
     initialSearchOpen?: boolean;
     onSearchOpenChange?: (open: boolean) => void;
     attachSearchHistorySuggest?: AttachSearchHistorySuggest;
@@ -241,7 +244,7 @@
 
   let {
     panelModel,
-    showNavigation = true, initialSearchOpen = false, onSearchOpenChange,
+    showNavigation = true, stream, onStreamMenu, onStreamClose, initialSearchOpen = false, onSearchOpenChange,
     attachSearchHistorySuggest,
     onOpenNote,
     onSearchSnippetsCommand,
@@ -1068,7 +1071,7 @@
   {/if}
   <div class="fce-main-pane {bulk.bulkMode ? 'is-bulk-mode' : ''}">
   <Toolbar
-    {initialSearchOpen} {onSearchOpenChange}
+    {initialSearchOpen} {onSearchOpenChange} {stream} {onStreamMenu} {onStreamClose}
     {runtimeDevice}
     {attachSearchHistorySuggest}
     {strings}

@@ -1261,7 +1261,7 @@ export default class CardWorkspacePlugin extends Plugin {
     const entries: Array<{ id: string; label: string; command?: StreamCommand; action?: "create" | "reopen" | "next" | "previous" }> = [
       { id: "new-card-stream", label: labels.create, action: "create" },
       { id: "duplicate-card-stream", label: labels.duplicate, command: "duplicate" },
-      { id: "show-only-card-stream", label: labels.showOnly, command: "show-only" },
+      { id: "toggle-maximize-card-stream", label: `${labels.maximize} / ${labels.restore}`, command: "maximize" },
       { id: "collapse-card-stream", label: labels.collapse, command: "collapse" },
       { id: "close-card-stream", label: labels.close, command: "close" },
       { id: "reopen-card-stream", label: labels.reopen, action: "reopen" },
@@ -1279,7 +1279,7 @@ export default class CardWorkspacePlugin extends Plugin {
       if (checking) return true;
       if (entry.command && state.currentStreamId) view.handleStreamCommand(state.currentStreamId, entry.command);
       else if (entry.action === "create") view.openNewStreamPicker();
-      else if (entry.action === "reopen") view.streams.reopen();
+      else if (entry.action === "reopen") view.reopenStream();
       else {
         const index = state.streams.findIndex(stream => stream.id === state.currentStreamId);
         const offset = entry.action === "previous" ? -1 : 1;

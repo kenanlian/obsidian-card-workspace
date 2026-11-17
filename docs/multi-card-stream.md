@@ -4,22 +4,33 @@ On desktop, one Card Workspace pane can retain several independent card streams 
 
 ## Create and identify streams
 
-Use **New stream** to choose a folder, box, tag, property value, or links reference. A source navigation context menu can also **Open in a new card stream**. Tags and property values open over the entire vault, including subfolders, with only the chosen condition.
+A pane keeps the original two-column layout: source navigation on the left, card streams on the right. Each stream's own toolbar shows its title; clicking the title opens the stream menu. There is no separate stream list or workspace bar.
 
-New streams start from the source's default arrangement with an empty search and filters. Duplicating copies the current browsing conditions and reading position. The new stream is expanded and selected. The original remains available. Repeated sources are allowed; default titles distinguish copies, and **Rename stream** changes only the stream's research name.
+To open a source in a new stream:
+
+- Middle-click any navigation row. Ctrl/Cmd-click does the same on folders, boxes, links and favorites. On tags and property values, Ctrl/Cmd-click still adds a filter, so use middle-click there.
+- Choose **Open in a new card stream** from a navigation context menu. Tags and property values open over the entire vault, including subfolders, with only the chosen condition.
+- Choose **New stream…** from a stream menu to pick a folder, box, tag, property value or links reference.
+- **Split stream** duplicates the current stream's browsing conditions and reading position.
+
+A new stream opens to the right of the current one, one card column wide (320 px), and becomes the current target. Existing streams keep their widths. When the pane sits in a sidebar, the sidebar widens to fit the new stream, leaving at least 400 px for the main workspace. Otherwise, and once that limit is reached, the stream row scrolls horizontally. Closing streams never shrinks the sidebar.
+
+New streams start from the source's default arrangement with an empty search and filters. Repeated sources are allowed; default titles add a number to tell copies apart, and **Rename stream** changes only the stream's display name.
 
 ## Select, collapse and compare
 
-The vertical stream list appears above source navigation. Clicking a visible stream selects it without changing the tiled combination. Clicking a collapsed entry expands and selects it. Navigation always controls the selected stream in that pane. Moving keyboard focus into navigation or another Obsidian pane does not change the remembered target.
+Clicking or focusing inside a stream makes it the current target. With several streams, the current one has an accent line above its toolbar, and the other titles are muted. Navigation always controls the current stream in that pane. Moving keyboard focus into navigation or another Obsidian pane does not change the target. Choosing a stream from the menu or a command scrolls it into view.
 
-- **Show only this stream** explicitly collapses the others.
-- **Tile this stream** preserves the others' expansion choices.
-- **Collapse stream** hides its content but retains its context and list entry.
-- **Close stream** removes it without deleting notes or boxes.
+The stream menu lists every stream (a check marks the current one) and offers:
 
-Streams can be reordered, arranged side by side or top to bottom, and resized with separators. There is no fixed stream-count limit. When space runs out, the current stream and more recently used streams stay visible first; other streams collapse with an explanation. Growing the pane restores streams that were collapsed for space, respecting subsequent manual choices. A narrow desktop pane uses the existing navigation/content switch and retains a stream-list button.
+- **Maximize stream** shows only that stream at the full pane width. **Restore streams** returns to the side-by-side row. While maximized, selecting another stream maximizes that one instead.
+- **Collapse stream** shrinks it to a narrow vertical strip with its title. Clicking the strip expands and selects it; right-clicking opens its menu.
+- **Move left** / **Move right** reorder streams; dragging a stream's title or strip does the same.
+- **Close stream** removes it without deleting notes or boxes. Toolbars also show a close button when the pane has more than one stream.
 
-All streams may be collapsed or closed. With no current target, choosing a navigation source creates a new stream. Closing or moving the last stream leaves an empty pane. **Reopen closed stream** restores up to ten recently closed streams in the same session; that history is cleared on restart.
+Drag the thin separator to the right of a stream to change its width (minimum 240 px). The last stream stretches to fill spare space. There is no fixed stream-count limit, and streams never collapse automatically. Streams scrolled out of view pause their preview work. A narrow desktop pane uses the existing navigation/content switch.
+
+All streams may be collapsed or closed. With no current target, choosing a navigation source creates a new stream. Closing or moving the last stream leaves an empty pane offering **New stream…**, **Reopen closed stream**, and the navigation toggle. **Reopen closed stream** restores up to ten recently closed streams in the same session; that history is cleared on restart.
 
 ## Independent browsing, shared notes
 
@@ -35,12 +46,12 @@ New and duplicated links streams default to a fixed reference. A fixed reference
 
 **Copy to a new pane** preserves the original and starts an independent copy without bulk selection. Menus and drag gestures are not transferred. Each pane has its own navigation. Global open-source commands ask for a target when multiple Card Workspace panes exist in the same window; cancelling changes nothing.
 
-Normal Obsidian workspace restoration preserves each pane's streams, order, names, conditions, expansion choices, current target and sizes. Missing sources show a repairable empty state. Missing reading anchors fall back to a nearby position. Temporary bulk selections and the recently closed history are not restored after restart.
+Normal Obsidian workspace restoration preserves each pane's streams, order, names, conditions, collapse and maximize choices, current target and widths. Missing sources show a repairable empty state. Missing reading anchors fall back to a nearby position. Temporary bulk selections and the recently closed history are not restored after restart.
 
 ## Keyboard and boundaries
 
-Desktop commands also create, duplicate, collapse, close, reopen and transfer streams, or select the next/previous stream. They use the active Card Workspace pane and require a current target when operating on a stream; no shortcuts are assigned by default.
+Desktop commands also create, split, maximize/restore, collapse, close, reopen and transfer streams, or select the next/previous stream. They use the active Card Workspace pane and require a current target when operating on a stream; no shortcuts are assigned by default.
 
-The stream list supports arrow keys, Home/End, Enter/Space and the context-menu key. Reorder buttons offer a keyboard alternative to pointer interaction. Focused separators resize with direction keys; Shift uses a larger step. Current and collapsed states have text and accessible labels as well as visual styling.
+Stream titles and collapsed strips are buttons: Enter/Space opens the menu or expands the stream. **Move left** / **Move right** offer a keyboard alternative to dragging. Focused separators resize with Left/Right; Shift uses a larger step. Current and collapsed states have accessible labels as well as visual styling.
 
 This version does not add moving streams into existing panes, drag-out detachment, operating-system windows or cross-window transfers, saved named stream groups, reopening entire closed panes, or cross-stream card drops that change membership. Existing note-opening destinations remain available.

@@ -56,6 +56,9 @@
     attachSearchHistorySuggest?: AttachSearchHistorySuggest;
     initialSearchOpen?: boolean;
     onSearchOpenChange?: (open: boolean) => void;
+    stream?: import("./stream-panel-model").StreamToolbarState;
+    onStreamMenu?: (anchor: HTMLElement) => void;
+    onStreamClose?: () => void;
     strings?: UiStrings;
     scope?: PanelScopeState;
     search?: PanelSearchState;
@@ -150,6 +153,7 @@
   let {
     attachSearchHistorySuggest,
     initialSearchOpen = false, onSearchOpenChange,
+    stream, onStreamMenu, onStreamClose,
     strings = getUiStrings("en"),
     scope = DEFAULT_SCOPE,
     search = DEFAULT_SEARCH,
@@ -244,6 +248,8 @@
 
   const scopeText = $derived(buildScopeLabel({ scope, activeFilterTags, strings: toolbarStrings }, "name"));
   const scopeTooltip = $derived(buildScopeLabel({ scope, activeFilterTags, strings: toolbarStrings }, "full"));
+  const streamLabel = $derived(stream ? `${stream.title ?? scopeText}${stream.ordinal ? ` (${stream.ordinal})` : ""}` : scopeText);
+  const streamTooltip = $derived(stream?.title ? `${stream.title}\n${scopeTooltip}` : scopeTooltip);
 
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let searchExpanded = $state(untrack(() => initialSearchOpen));
@@ -632,22 +638,34 @@
 <header class="fce-header {bulkMode ? 'is-bulk-mode' : ''}" class:is-draw-mode={drawActive} class:is-compact={compact}>
   <div class="fce-toolbar" role="toolbar" aria-label={toolbarStrings.actions.toolbarAriaLabel}>
     <div class="fce-toolbar-buttons" use:bindToolbarWidth>
-      <button
-        type="button"
-        class="clickable-icon fce-toolbar-button"
-        aria-label={navVisible ? toolbarStrings.navPane.collapsePane : toolbarStrings.navPane.expandPane}
-        aria-pressed={navVisible}
-        onclick={() => onToggleNavPane?.()}
-        use:applyIcon={navVisible ? "panel-left-close" : "panel-left-open"}
-        use:applyTooltip={navVisible ? toolbarStrings.navPane.collapsePane : toolbarStrings.navPane.expandPane}
-      >
-        <span class="fce-sr-only">{navVisible ? toolbarStrings.navPane.collapsePane : toolbarStrings.navPane.expandPane}</span>
-      </button>
-      <div class="fce-toolbar-scope {isLinksMode ? 'is-links' : isBoxMode ? 'is-box' : ''}" use:applyTooltip={scopeTooltip}>
-        <span class="fce-sr-only">{toolbarStrings.scope.ariaLabel}</span>
-        <span class="fce-toolbar-scope-text">{scopeText}</span>
-        {#if taskMode}<span class="fce-task-mode-badge">{strings.tasks.view.toggle}</span>{/if}
-      </div>
+      {#if !stream || stream.showNavToggle}
+        <button
+          type="button"
+          class="clickable-icon fce-toolbar-button"
+          aria-label={navVisible ? toolbarStrings.navPane.collapsePane : toolbarStrings.navPane.expandPane}
+          aria-pressed={navVisible}
+          onclick={() => onToggleNavPane?.()}
+          use:applyIcon={navVisible ? "panel-left-close" : "panel-left-open"}
+          use:applyTooltip={navVisible ? toolbarStrings.navPane.collapsePane : toolbarStrings.navPane.expandPane}
+        >
+          <span class="fce-sr-only">{navVisible ? toolbarStrings.navPane.collapsePane : toolbarStrings.navPane.expandPane}</span>
+        </button>
+      {/if}
+      {#if stream}
+        <button type="button" class="fce-toolbar-scope fce-stream-switcher {isLinksMode ? 'is-links' : isBoxMode ? 'is-box' : ''}"
+          aria-haspopup="menu" onclick={(event) => onStreamMenu?.(event.currentTarget)} use:applyTooltip={streamTooltip}>
+          <span class="fce-sr-only">{stream.switcherLabel}: </span>
+          <span class="fce-toolbar-scope-text">{streamLabel}</span>
+          {#if taskMode}<span class="fce-task-mode-badge">{strings.tasks.view.toggle}</span>{/if}
+          <span class="fce-stream-switcher-icon" aria-hidden="true" use:applyIcon={"chevron-down"}></span>
+        </button>
+      {:else}
+        <div class="fce-toolbar-scope {isLinksMode ? 'is-links' : isBoxMode ? 'is-box' : ''}" use:applyTooltip={scopeTooltip}>
+          <span class="fce-sr-only">{toolbarStrings.scope.ariaLabel}</span>
+          <span class="fce-toolbar-scope-text">{scopeText}</span>
+          {#if taskMode}<span class="fce-task-mode-badge">{strings.tasks.view.toggle}</span>{/if}
+        </div>
+      {/if}
       <div class="fce-toolbar-actions">
         {#if taskMode}
           <button type="button" class="clickable-icon fce-toolbar-button" class:is-selected={taskFilters.status !== "all"} aria-label={taskTools.status} onclick={event => taskAction("task-status", event)} use:applyIcon={"list-filter"} use:applyTooltip={taskTools.status}></button>
@@ -819,6 +837,10 @@
             use:applyIcon={"ellipsis"}
             use:applyTooltip={toolbarStrings.actions.more}
           ></button>
+        {/if}
+        {#if stream?.closable}
+          <button type="button" class="clickable-icon fce-toolbar-button fce-stream-close" aria-label={stream.closeLabel}
+            onclick={() => onStreamClose?.()} use:applyIcon={"x"} use:applyTooltip={stream.closeLabel}></button>
         {/if}
       </div>
     </div>

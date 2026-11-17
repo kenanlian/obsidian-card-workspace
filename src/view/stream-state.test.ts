@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../settings";
-import { LeafStreamController, decodeDesktopLeafState, resolveStreamSizes, type DesktopLeafStateV1, type LeafNavigationState, type StreamSnapshot } from "./stream-state";
+import { LeafStreamController, decodeDesktopLeafState, resolveRequiredStripWidth, resolveStreamLayout, type DesktopLeafStateV1, type LeafNavigationState, type StreamSnapshot } from "./stream-state";
 
 function stream(id: string, lastActive = 0): StreamSnapshot {
   return {
@@ -13,7 +13,7 @@ function stream(id: string, lastActive = 0): StreamSnapshot {
     query: "", searchOpen: false, linksPinned: false,
     taskFilters: { status: "incomplete", date: { field: "due", preset: "custom", start: "2026-11-01", end: "2026-11-30", weekEnd: 0 } },
     collapsedGroups: { folders: ["group-a"] }, anchor: { ref: { kind: "card", path: `${id}.md`, groupKey: "group-a" }, offset: -4 },
-    anchorIndex: 2, desiredExpanded: true, lastActive, widthWeight: 1, heightWeight: 1,
+    anchorIndex: 2, desiredExpanded: true, lastActive, width: null,
   };
 }
 function navigation(): LeafNavigationState {
@@ -23,36 +23,62 @@ function navigation(): LeafNavigationState {
   };
 }
 function persisted(streams = [stream("a")]): DesktopLeafStateV1 {
-  return { version: 1, streams, currentStreamId: streams[0]?.id ?? null, direction: "horizontal", navigation: navigation() };
+  return { version: 1, streams, currentStreamId: streams[0]?.id ?? null, maximizedStreamId: null, navigation: navigation() };
 }
 
 describe("LeafStreamController", () => {
-  it("keeps current and MRU tiles when shrinking, then restores desired streams in list order", () => {
-    const controller = new LeafStreamController([stream("a", 1), stream("b", 2), stream("c", 3), stream("d", 4)]);
-    expect(controller.getState().visibleIds).toEqual(["a", "b", "c", "d"]);
-    controller.setSize(732, 800);
-    expect(controller.getState().visibleIds).toEqual(["a", "c", "d"]);
-    controller.setSize(486, 800);
-    expect(controller.getState().visibleIds).toEqual(["a", "d"]);
-    controller.select("b");
-    expect(controller.getState().visibleIds).toEqual(["b", "d"]);
-    expect(controller.getState().streams.every(value => value.desiredExpanded)).toBe(true);
-    controller.setSize(1000, 800);
-    expect(controller.getState().visibleIds).toEqual(["a", "b", "c", "d"]);
-    controller.setDirection("vertical");
-    controller.setSize(1000, 406);
-    expect(controller.getState().visibleIds).toEqual(["b", "d"]);
+  it("keeps every expanded stream visible at any size and maximizes one stream at a time", () => {
+    const controller = new LeafStreamController([stream("a", 1), stream("b", 2), stream("c", 3)]);
+    controller.setSize(300, 800);
+    expect(controller.getState().visibleIds).toEqual(["a", "b", "c"]);
+    controller.toggleMaximized("b");
+    expect(controller.getState()).toMatchObject({ maximizedStreamId: "b", currentStreamId: "b", visibleIds: ["b"] });
+    controller.select("c");
+    expect(controller.getState()).toMatchObject({ maximizedStreamId: "c", currentStreamId: "c", visibleIds: ["c"] });
+    controller.toggleMaximized("c");
+    expect(controller.getState()).toMatchObject({ maximizedStreamId: null, visibleIds: ["a", "b", "c"] });
+    controller.toggleMaximized("a");
+    controller.add(stream("d"));
+    expect(controller.getState()).toMatchObject({ maximizedStreamId: null, currentStreamId: "d" });
+    expect(controller.getState().streams.map(value => value.id)).toEqual(["a", "d", "b", "c"]);
+    controller.toggleMaximized("d");
+    controller.setExpanded("d", false);
+    expect(controller.getState()).toMatchObject({ maximizedStreamId: null, currentStreamId: "b", visibleIds: ["a", "b", "c"] });
+    controller.toggleMaximized("b");
+    controller.remove("b");
+    expect(controller.getState()).toMatchObject({ maximizedStreamId: null, currentStreamId: "c", visibleIds: ["a", "c"] });
   });
 
-  it("breaks MRU ties by stream order and handles zero sizes and space smaller than one tile", () => {
-    const controller = new LeafStreamController([stream("a"), stream("b"), stream("c"), stream("d")]);
-    controller.setSize(486, 0);
-    expect(controller.getState().visibleIds).toEqual(["a", "b"]);
-    controller.setSize(1, 1);
-    expect(controller.getState().visibleIds).toEqual(["a"]);
-    expect(resolveStreamSizes(controller.getState())).toEqual({ a: 1 });
+  it("freezes rendered widths when adding, starts new streams as one column and stretches only the final stream", () => {
+    const controller = new LeafStreamController([stream("a")]);
+    expect(resolveStreamLayout(controller.getState())).toEqual([{ id: "a", display: "stream", width: 320, separator: false }]);
+    controller.setSize(1000, 800);
+    expect(resolveStreamLayout(controller.getState())).toEqual([{ id: "a", display: "stream", width: 1000, separator: false }]);
+    controller.add(stream("b"));
+    expect(controller.getState().streams.map(value => [value.id, value.width])).toEqual([["a", 1000], ["b", 320]]);
+    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([1000, 320]);
+    expect(resolveRequiredStripWidth(controller.getState())).toBe(1000 + 320 + 12);
+    controller.setSize(1400, 800);
+    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([1000, 388]);
+    controller.setExpanded("a", false);
+    expect(resolveStreamLayout(controller.getState())).toEqual([
+      { id: "a", display: "spine", width: 28, separator: false }, { id: "b", display: "stream", width: 1366, separator: true },
+    ]);
+    controller.toggleMaximized("b");
+    expect(resolveStreamLayout(controller.getState())).toEqual([{ id: "b", display: "stream", width: 1400, separator: false }]);
+  });
+
+  it("shares unsized space above the minimum and overflows instead of shrinking", () => {
+    const controller = new LeafStreamController([stream("a"), stream("b"), stream("c")]);
+    controller.setSize(1000, 800);
+    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([327, 327, 328]);
+    controller.setSize(500, 800);
+    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([240, 240, 240]);
     controller.setSize(0, 0);
-    expect(controller.getState().visibleIds).toEqual(["a", "b", "c", "d"]);
+    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([320, 320, 320]);
+    const compact = new LeafStreamController([stream("only")]);
+    compact.setSize(200, 600);
+    expect(resolveStreamLayout(compact.getState())[0].width).toBe(200);
   });
 
   it("uses the next effective tile then the previous tile when collapsing or closing current", () => {
@@ -71,28 +97,20 @@ describe("LeafStreamController", () => {
     expect(controller.getState().visibleIds).toEqual([]);
   });
 
-  it("does not select an automatically collapsed tile after manually collapsing the sole effective current", () => {
+  it("adds after current with no stream cap and moves streams by index", () => {
     const controller = new LeafStreamController([stream("a"), stream("b"), stream("c")]);
-    controller.setSize(240, 200);
-    controller.setExpanded("a", false);
-    expect(controller.getState().currentStreamId).toBeNull();
-    expect(controller.getState().streams.find(value => value.id === "b")?.desiredExpanded).toBe(true);
-  });
-
-  it("showOnly changes desired expansion and add inserts after current with no stream cap", () => {
-    const controller = new LeafStreamController([stream("a"), stream("b"), stream("c")]);
-    controller.showOnly("b");
+    controller.select("b");
     controller.add(stream("d"));
     expect(controller.getState().streams.map(value => value.id)).toEqual(["a", "b", "d", "c"]);
-    expect(controller.getState().visibleIds).toEqual(["b", "d"]);
     expect(controller.getState().currentStreamId).toBe("d");
-    controller.showOnly("c");
-    controller.setSize(10000, 10000);
-    expect(controller.getState().visibleIds).toEqual(["c"]);
     for (let index = 0; index < 20; index++) controller.add(stream(`extra-${index}`));
     expect(controller.getState().streams).toHaveLength(24);
     controller.reorder("extra-19", -1);
     expect(controller.getState().streams[controller.getState().streams.findIndex(value => value.id === "extra-18") - 1].id).toBe("extra-19");
+    controller.move("a", 99);
+    expect(controller.getState().streams.at(-1)!.id).toBe("a");
+    controller.move("a", 0);
+    expect(controller.getState().streams[0].id).toBe("a");
   });
 
   it("isolates input, public state, update payloads, closed snapshots and serialization", () => {
@@ -129,8 +147,9 @@ describe("LeafStreamController", () => {
     controller.select("a");
     controller.setExpanded("a", true);
     controller.setSize(0, 0);
-    controller.setDirection("horizontal");
-    controller.showOnly("a");
+    controller.setWidth("a", Number.NaN);
+    controller.move("a", 0);
+    controller.reorder("a", -1);
     expect(listener).toHaveBeenCalledTimes(1);
     controller.update("a", { query: "search" });
     expect(listener).toHaveBeenCalledTimes(2);
@@ -167,27 +186,17 @@ describe("LeafStreamController", () => {
     expect(controller.getState().streams.map(value => value.id)).toEqual(["b-1", "b"]);
   });
 
-  it("resizes only an adjacent visible pair with minimums, independent directional weights and fixed other sizes", () => {
+  it("resizes one stream without shrinking its neighbours and clamps widths", () => {
     const controller = new LeafStreamController([stream("a"), stream("b"), stream("c")]);
-    controller.setSize(1200, 1000);
-    expect(resolveStreamSizes(controller.getState())).toEqual({ a: 396, b: 396, c: 396 });
-    controller.resizePair("a", "c", 100);
-    expect(resolveStreamSizes(controller.getState()).a).toBe(396);
-    controller.resizePair("a", "b", 100);
-    expect(resolveStreamSizes(controller.getState())).toEqual({ a: 496, b: 296, c: 396 });
-    controller.resizePair("a", "b", -1000);
-    const sizes = resolveStreamSizes(controller.getState());
-    expect(sizes.a).toBeCloseTo(240);
-    expect(sizes.b).toBeCloseTo(552);
-    expect(sizes.c).toBe(396);
-    expect(controller.getState().streams.every(value => value.widthWeight > 0 && value.heightWeight === 1)).toBe(true);
-    controller.setDirection("vertical");
-    controller.resizePair("a", "b", 50);
-    const vertical = resolveStreamSizes(controller.getState());
-    expect(vertical.a - vertical.b).toBeCloseTo(100);
-    expect(vertical.c).toBeCloseTo((1000 - 12) / 3);
-    controller.setDirection("horizontal");
-    expect(resolveStreamSizes(controller.getState()).c).toBe(396);
+    controller.setSize(1200, 800);
+    controller.setWidth("a", 500);
+    controller.setWidth("b", 100);
+    expect(controller.getState().streams.map(value => value.width)).toEqual([500, 240, null]);
+    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([500, 240, 442]);
+    controller.setWidth("a", 99999);
+    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([4000, 240, 240]);
+    controller.setWidth("missing", 300);
+    expect(controller.getState().streams.map(value => value.width)).toEqual([4000, 240, null]);
   });
 
   it("atomically rewrites live and recently closed sources and anchors without changing identities", () => {
@@ -233,14 +242,14 @@ describe("LeafStreamController", () => {
     const controller = new LeafStreamController([stream("a", 100)]);
     controller.remove("a");
     const saved = persisted([stream("x", 5), stream("y", 10)]);
-    saved.direction = "vertical";
+    saved.maximizedStreamId = "y";
     controller.restore(saved);
     saved.streams[0].browse.filter.tags.push("external");
     controller.select("y");
     expect(controller.getState().streams.find(value => value.id === "y")!.lastActive).toBeGreaterThan(100);
     expect(controller.getState().streams[0].browse.filter.tags).toEqual(["#a"]);
     expect(controller.getState().recentlyClosedCount).toBe(0);
-    expect(controller.getState().direction).toBe("vertical");
+    expect(controller.getState().maximizedStreamId).toBe("y");
   });
 });
 
@@ -276,7 +285,6 @@ describe("decodeDesktopLeafState", () => {
     { ...persisted(), streams: [{ ...stream("a"), browse: null }] },
     { ...persisted(), streams: [stream("same"), stream("same")], currentStreamId: "same" },
     { ...persisted(), currentStreamId: "missing" },
-    { ...persisted(), direction: "diagonal" },
     { ...persisted(), streams: [null] },
     { ...persisted(), streams: "invalid" },
   ])("rejects malformed v1 without replacing it with a vault root: %j", input => {
@@ -286,8 +294,7 @@ describe("decodeDesktopLeafState", () => {
   it("sanitizes bounded serializable fields and strips unrelated settings or cache data", () => {
     const input = persisted() as unknown as Record<string, unknown>;
     const snapshot = (input.streams as Record<string, unknown>[])[0];
-    snapshot.widthWeight = Number.NaN;
-    snapshot.heightWeight = -1;
+    snapshot.width = Number.NaN;
     snapshot.anchor = { ref: { kind: "card-index", index: -1 }, offset: 3 };
     snapshot.anchorIndex = -50;
     snapshot.collapsedGroups = { good: ["a", 3, "b"] };
@@ -302,8 +309,7 @@ describe("decodeDesktopLeafState", () => {
     expect(decoded.kind).toBe("ready");
     if (decoded.kind !== "ready") return;
     const result = decoded.state.streams[0];
-    expect(result.widthWeight).toBe(1);
-    expect(result.heightWeight).toBeGreaterThan(0);
+    expect(result.width).toBeNull();
     expect(result.anchor).toBeNull();
     expect(result.anchorIndex).toBe(0);
     expect(result.collapsedGroups).toEqual({ good: ["a", "b"] });
@@ -314,5 +320,21 @@ describe("decodeDesktopLeafState", () => {
     expect(result).not.toHaveProperty("cache");
     expect(decoded.state.navigation.width).toBe(DEFAULT_SETTINGS.navPaneWidth);
     expect(decoded.state.navigation.expandedFolderPaths).toEqual(["Missing"]);
+  });
+
+  it("ignores earlier arrangement fields, clamps saved widths and keeps a maximized stream expanded", () => {
+    const input = { ...persisted([stream("a"), stream("b")]), direction: "vertical", maximizedStreamId: "b" } as Record<string, unknown>;
+    const streams = input.streams as Record<string, unknown>[];
+    Object.assign(streams[0], { widthWeight: 3, width: 12 });
+    Object.assign(streams[1], { width: "wide", desiredExpanded: false });
+    const decoded = decodeDesktopLeafState(input, DEFAULT_SETTINGS);
+    expect(decoded.kind).toBe("ready");
+    if (decoded.kind !== "ready") return;
+    expect(decoded.state).not.toHaveProperty("direction");
+    expect(decoded.state.maximizedStreamId).toBe("b");
+    expect(decoded.state.streams.map(value => [value.width, value.desiredExpanded])).toEqual([[240, true], [null, true]]);
+    expect(decoded.state.streams[0]).not.toHaveProperty("widthWeight");
+    const unknown = decodeDesktopLeafState({ ...persisted(), maximizedStreamId: "missing" }, DEFAULT_SETTINGS);
+    expect(unknown.kind === "ready" && unknown.state.maximizedStreamId).toBeNull();
   });
 });

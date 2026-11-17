@@ -119,6 +119,7 @@
   use:applyTooltip={tooltipText}
   onfocus={() => onFocus?.(row.id)}
   onclick={(event) => onActivate?.(event, row)}
+  onauxclick={(event) => { if (event.button === 1) onActivate?.(event, row); }}
   onkeydown={(event) => onKeydown?.(event, row)}
   use:touchDrag={row.id}
   oncontextmenu={(event) => onContextMenu?.(event, row)}

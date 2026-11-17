@@ -117,6 +117,8 @@ try {
     await new Promise(resolve => win.setTimeout(resolve, 0));
     assert.equal(win.document.querySelectorAll(".fce-stream-panel").length, 3);
     assert.equal(win.document.querySelectorAll(".fce-nav-pane").length, 1);
+    assert.equal(win.document.querySelectorAll(".fce-stream-switcher").length, 3, "Each stream's toolbar carries its switcher");
+    assert.equal(win.document.querySelectorAll(".fce-stream-workspace-bar, .fce-stream-list").length, 0);
     view.modules.search.onQueryChange({ query: "only this stream" });
     view.modules.search.clearDebounce(); await view.modules.search.refreshProjection();
     assert.equal(view.panelModel.getState().cards.records.length, 0, "Blocked query is local to the targeted stream");
@@ -129,10 +131,11 @@ try {
     view.handleStreamCommand(second, "collapse");
     await new Promise(resolve => win.setTimeout(resolve, 0));
     assert.equal(win.document.querySelectorAll(".fce-stream-panel").length, 2);
+    assert.equal(win.document.querySelectorAll(".fce-stream-spine").length, 1, "A collapsed stream stays reachable as a spine");
     view.streams.select(second); await view.waitForForeground();
     await new Promise(resolve => win.setTimeout(resolve, 0));
     assert.equal(win.document.querySelectorAll(".fce-stream-panel").length, 3);
-    console.log("[runtime-bundle] desktop: three independent streams, local blocked query, collapse/reopen and leaf restore passed");
+    console.log("[runtime-bundle] desktop: three independent streams, local blocked query, collapse to spine/reopen and leaf restore passed");
   }
   const oneView = plugin.getRuntimeDiagnostics();
   for (let index = 1; index < 20; index++) fixture.leaves.push(fixture.leaves[0]);

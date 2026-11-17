@@ -3,9 +3,9 @@ import { createStreamPanelModel, type StreamPanelState } from "./stream-panel-mo
 import { getStreamUiStrings } from "./stream-ui-strings";
 describe("stream panel bridge", () => {
   it("immediately subscribes, publishes complete host snapshots and unsubscribes", () => {
-    const initial: StreamPanelState = { entries: [], currentStreamId: null, direction: "horizontal", navigationVisible: true, singlePane: false, navPanelModel: null, navProps: {}, labels: getStreamUiStrings("en"), recentlyClosedCount: 0, unsupported: false };
+    const initial: StreamPanelState = { entries: [], currentStreamId: null, maximizedStreamId: null, navigationVisible: true, singlePane: false, navPanelModel: null, navProps: {}, labels: getStreamUiStrings("en"), recentlyClosedCount: 0, unsupported: false };
     const model = createStreamPanelModel(initial), listener = vi.fn(); const stop = model.subscribe(listener);
-    expect(listener).toHaveBeenLastCalledWith(initial); const next = { ...initial, direction: "vertical" as const }; model.setState(next); expect(model.getState()).toBe(next); expect(listener).toHaveBeenLastCalledWith(next);
+    expect(listener).toHaveBeenLastCalledWith(initial); const next = { ...initial, maximizedStreamId: "a" }; model.setState(next); expect(model.getState()).toBe(next); expect(listener).toHaveBeenLastCalledWith(next);
     stop(); model.setState(initial); expect(listener).toHaveBeenCalledTimes(2);
   });
   it("localizes every visible stream label and defaults unknown languages to English", () => {

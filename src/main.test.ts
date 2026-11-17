@@ -4405,8 +4405,8 @@ describe("desktop workspace target selection and independent panes", () => {
   it("targets desktop stream commands only at an active pane with a current stream", () => {
     const { plugin, app } = targetHarness(); const candidate = view();
     const state = { streams: [{ id: "a" }, { id: "b" }], currentStreamId: "b" as string | null, recentlyClosedCount: 1 };
-    const select = vi.fn(), reopen = vi.fn(), handleStreamCommand = vi.fn(), openNewStreamPicker = vi.fn();
-    Object.assign(candidate, { streams: { getState: () => state, select, reopen }, handleStreamCommand, openNewStreamPicker });
+    const select = vi.fn(), reopenStream = vi.fn(), handleStreamCommand = vi.fn(), openNewStreamPicker = vi.fn();
+    Object.assign(candidate, { streams: { getState: () => state, select }, reopenStream, handleStreamCommand, openNewStreamPicker });
     app.workspace.getActiveViewOfType.mockReturnValue(candidate);
     (plugin as any).registerStreamCommands();
     const commands = new Map((plugin as any).addCommand.mock.calls.map(([command]: any[]) => [command.id, command]));
@@ -4417,7 +4417,9 @@ describe("desktop workspace target selection and independent panes", () => {
     expect(close.checkCallback(false)).toBe(false); expect(handleStreamCommand).not.toHaveBeenCalled();
     expect((commands.get("next-card-stream") as any).checkCallback(false)).toBe(false); expect(select).not.toHaveBeenCalled();
     expect((commands.get("new-card-stream") as any).checkCallback(false)).toBe(true); expect(openNewStreamPicker).toHaveBeenCalledOnce();
-    expect((commands.get("reopen-card-stream") as any).checkCallback(false)).toBe(true); expect(reopen).toHaveBeenCalledOnce();
+    expect((commands.get("reopen-card-stream") as any).checkCallback(false)).toBe(true); expect(reopenStream).toHaveBeenCalledOnce();
+    state.currentStreamId = "a";
+    expect((commands.get("toggle-maximize-card-stream") as any).checkCallback(false)).toBe(true); expect(handleStreamCommand).toHaveBeenLastCalledWith("a", "maximize");
     app.workspace.getActiveViewOfType.mockReturnValue(null);
     expect(close.checkCallback(false)).toBe(false);
   });

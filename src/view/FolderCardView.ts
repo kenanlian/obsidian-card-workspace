@@ -4,7 +4,7 @@ import type CardWorkspacePlugin from "../main";
 import { normalizeSettings } from "../settings";
 import { CARD_WORKSPACE_ICON } from "../icons";
 import { CardStreamRuntime } from "./CardStreamRuntime";
-import { LeafStreamController, decodeDesktopLeafState, resolveStreamSizes, type LeafNavigationState, type StreamSnapshot } from "./stream-state";
+import { LeafStreamController, decodeDesktopLeafState, resolveRequiredStripWidth, resolveStreamLayout, type LeafNavigationState, type StreamSnapshot } from "./stream-state";
 import { createStreamBrowseState } from "./stream-browse-state";
 import { createStreamPanelModel, type StreamCommand, type StreamPanelModel } from "./stream-panel-model";
 import { getStreamUiStrings } from "./stream-ui-strings";
@@ -26,6 +26,8 @@ import type { ViewUpdateIntent } from "./update-intent";
 import type { RefreshReason } from "./types";
 
 export const FOLDER_CARD_VIEW = "folder-card-view";
+/** Widening a sidebar dock for a new stream keeps at least this much of the window for the main workspace. */
+const MAIN_WORKSPACE_MIN_WIDTH = 400;
 let streamSequence = 0;
 function nextStreamId(): string { return `stream-${Date.now().toString(36)}-${(++streamSequence).toString(36)}`; }
 type RuntimeEntry = { runtime: CardStreamRuntime; props: ReturnType<CardStreamRuntime["getPanelProps"]>; stop: () => void; stopActivity: (() => void) | null };
@@ -107,7 +109,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       isCurrent: () => this.currentRuntime === null,
       getNavigationSnapshot: () => this.currentRuntime?.panelModel.getState().nav,
     } : {});
-    this.streamPanelModel = createStreamPanelModel({ entries: [], currentStreamId: null, direction: "horizontal",
+    this.streamPanelModel = createStreamPanelModel({ entries: [], currentStreamId: null, maximizedStreamId: null,
       navigationVisible: this.navLayout.getNavVisible(), singlePane: false, navPanelModel: this.fallback.panelModel,
       navProps: {}, labels: getStreamUiStrings(plugin.getUiLanguage()), recentlyClosedCount: 0, unsupported: false });
     this.stopStreams = this.desktop ? this.streams.subscribe(() => this.syncStreams()) : null;
@@ -158,7 +160,7 @@ export class FolderCardView extends ItemView implements HoverParent {
   private makeSnapshot(scope: CardScope): StreamSnapshot {
     return { id: nextStreamId(), title: null, scope: { ...scope }, browse: createStreamBrowseState(scope, this.plugin.getSettings()),
       query: "", searchOpen: false, linksPinned: scope.kind === "links", taskFilters: { ...DEFAULT_TASK_FILTER },
-      collapsedGroups: {}, anchor: null, anchorIndex: 0, desiredExpanded: true, lastActive: 0, widthWeight: 1, heightWeight: 1 };
+      collapsedGroups: {}, anchor: null, anchorIndex: 0, desiredExpanded: true, lastActive: 0, width: null };
   }
   private sourceLabel(scope: CardScope): string {
     if (scope.kind === "folder") return scope.path || "/";
@@ -167,10 +169,17 @@ export class FolderCardView extends ItemView implements HoverParent {
     return `${scope.notePath} · ${direction}`;
   }
   private streamTitle(stream: StreamSnapshot): string {
-    if (stream.title) return stream.title;
-    const peers = this.streams.getState().streams.filter(candidate => scopeIdentity(candidate.scope) === scopeIdentity(stream.scope));
-    const label = this.sourceLabel(stream.scope);
-    return peers.length > 1 ? `${label} (${peers.findIndex(candidate => candidate.id === stream.id) + 1})` : label;
+    return this.describeStreams(this.streams.getState().streams).get(stream.id)?.title ?? this.sourceLabel(stream.scope);
+  }
+  /** Unnamed streams over the same source are numbered in list order. */
+  private describeStreams(streams: readonly StreamSnapshot[]): Map<string, { title: string; ordinal: number | null }> {
+    const counts = new Map<string, number>(), ordinals = new Map<string, number>();
+    for (const stream of streams) { const key = scopeIdentity(stream.scope); counts.set(key, (counts.get(key) ?? 0) + 1); }
+    return new Map(streams.map(stream => {
+      const key = scopeIdentity(stream.scope), ordinal = (ordinals.get(key) ?? 0) + 1; ordinals.set(key, ordinal);
+      const numbered = (counts.get(key) ?? 0) > 1 ? ordinal : null;
+      return [stream.id, { title: stream.title ?? `${this.sourceLabel(stream.scope)}${numbered ? ` (${numbered})` : ""}`, ordinal: stream.title ? null : numbered }];
+    }));
   }
   private capture(id: string): void {
     const entry = this.runtimes.get(id); const base = this.streams.getState().streams.find(stream => stream.id === id);
@@ -186,8 +195,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.syncing = true;
     try {
       const state = this.streams.getState();
-      const dimension = state.direction === "horizontal" ? state.width : state.height;
-      const visible = new Set(dimension > 0 ? state.visibleIds : state.currentStreamId ? [state.currentStreamId] : []);
+      const visible = new Set(state.visibleIds);
       for (const [id, entry] of this.runtimes) {
         if (visible.has(id) || this.transferring.has(id)) continue;
         this.capture(id);
@@ -241,14 +249,8 @@ export class FolderCardView extends ItemView implements HoverParent {
   }
   private publishStreams(): void {
     if (!this.desktop || !this.streamPanelModel || this.stopped) return;
-    const state = this.streams.getState(), visible = new Set(state.visibleIds), sizes = resolveStreamSizes(state);
-    const nav = this.navigationRuntime;
-    const counts = new Map<string, number>(), ordinals = new Map<string, number>();
-    for (const stream of state.streams) { const key = scopeIdentity(stream.scope); counts.set(key, (counts.get(key) ?? 0) + 1); }
-    const titleFor = (stream: StreamSnapshot): string => {
-      const key = scopeIdentity(stream.scope), ordinal = (ordinals.get(key) ?? 0) + 1; ordinals.set(key, ordinal);
-      return stream.title ?? `${this.sourceLabel(stream.scope)}${(counts.get(key) ?? 0) > 1 ? ` (${ordinal})` : ""}`;
-    };
+    const state = this.streams.getState(), layout = new Map(resolveStreamLayout(state).map(item => [item.id, item]));
+    const nav = this.navigationRuntime, descriptions = this.describeStreams(state.streams);
     const requireCurrent = (): CardStreamRuntime | null => {
       const runtime = this.currentRuntime;
       if (!runtime) new Notice(this.plugin.getUiLanguage() === "zh" ? "请先选择或新建卡片流。" : "Select or create a card stream first.");
@@ -261,15 +263,18 @@ export class FolderCardView extends ItemView implements HoverParent {
       onSelectFolder: (detail: { path?: unknown }) => {
       if (typeof detail.path === "string") void this.selectFolderFromNav(detail.path);
     }, onNavigationIntent: (intent: import("./navigation-model").NavigationIntent) => this.handleNavigationIntent(intent),
-      onToggleNavPane: () => { void this.navLayout.onToggleNavPane(); }, onShellResize: (width: number) => this.navLayout.onShellResize(width) };
+      onToggleNavPane: () => { void this.navLayout.onToggleNavPane(); }, onShellResize: (width: number) => this.navLayout.onShellResize(width),
+      newStreamGesture: true };
     this.streamPanelModel.setState({
-      entries: state.streams.map(stream => { const entry = this.runtimes.get(stream.id); return {
-        id: stream.id, title: titleFor(stream), sourceLabel: this.sourceLabel(stream.scope),
-        expanded: visible.has(stream.id), autoCollapsed: stream.desiredExpanded && !visible.has(stream.id),
-        current: stream.id === state.currentStreamId, pending: this.pending.has(stream.id) || this.transferring.has(stream.id),
-        error: this.failures.get(stream.id), panelModel: entry?.runtime.panelModel ?? null, props: entry?.props ?? {},
-        weight: state.direction === "horizontal" ? stream.widthWeight : stream.heightWeight, size: sizes[stream.id],
-      }; }), currentStreamId: state.currentStreamId, direction: state.direction,
+      entries: state.streams.map(stream => {
+        const entry = this.runtimes.get(stream.id), item = layout.get(stream.id), description = descriptions.get(stream.id)!;
+        return {
+          id: stream.id, title: description.title, customTitle: stream.title, ordinal: description.ordinal,
+          display: item?.display ?? "hidden" as const, width: item?.width ?? 0, separator: item?.separator ?? false,
+          current: stream.id === state.currentStreamId, pending: this.pending.has(stream.id) || this.transferring.has(stream.id),
+          error: this.failures.get(stream.id), panelModel: entry?.runtime.panelModel ?? null, props: entry?.props ?? {},
+        };
+      }), currentStreamId: state.currentStreamId, maximizedStreamId: state.maximizedStreamId,
       navigationVisible: this.navLayout.getNavVisible(), singlePane: this.navLayout.getLayoutMode() === "single",
       navPanelModel: nav.panelModel, navProps, labels: getStreamUiStrings(this.plugin.getUiLanguage()),
       recentlyClosedCount: state.recentlyClosedCount, unsupported: this.unsupported !== null,
@@ -307,7 +312,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       this.restoring = true;
       for (const entry of this.runtimes.values()) { entry.stop(); entry.stopActivity?.(); entry.runtime.cleanupLifecycle(); }
       this.runtimes.clear(); this.pending.clear(); this.sessions.clear();
-      this.streams.restore({ version: 1, streams: [], currentStreamId: null, direction: "horizontal", navigation: this.navigationState });
+      this.streams.restore({ version: 1, streams: [], currentStreamId: null, maximizedStreamId: null, navigation: this.navigationState });
       this.unsupported = parsed.raw; this.restored = true; this.restoring = false; this.publishStreams(); return;
     }
     this.restoring = true;
@@ -332,11 +337,10 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.component = mount(Panel, { target: this.hostEl, props: {
       model: this.streamPanelModel, onSelect: (id: string) => { if (!this.transferring.has(id)) this.streams.select(id); },
       onCommand: (id: string, command: StreamCommand, anchor?: HTMLElement) => this.handleStreamCommand(id, command, anchor),
-      onCreate: () => this.openNewStreamPicker(), onReopen: () => { this.streams.reopen(); },
-      onDirection: (direction: "horizontal" | "vertical") => this.streams.setDirection(direction),
+      onCreate: () => this.openNewStreamPicker(), onReopen: () => this.reopenStream(),
       onResize: (width: number, height: number) => this.streams.setSize(width, height),
-      onResizePair: (a: string, b: string, delta: number) => this.streams.resizePair(a, b, delta),
-      onReorder: (id: string, delta: -1 | 1) => this.streams.reorder(id, delta),
+      onStreamWidth: (id: string, width: number) => this.streams.setWidth(id, width),
+      onMove: (id: string, index: number) => this.streams.move(id, index),
       onToggleNav: () => { void this.navLayout.onToggleNavPane(); },
     } });
     this.navLayout.refreshFolderTreeState();
@@ -405,11 +409,11 @@ export class FolderCardView extends ItemView implements HoverParent {
     if (!this.desktop) { this.fallback.handleNavigationIntent(intent); return; }
     const currentId = this.streams.getState().currentStreamId;
     if (this.unsupported || this.stagedTransfer || (currentId && this.transferring.has(currentId))) return;
-    if (!this.hasCurrentStream() && intent.type === "activate") {
+    if (intent.type === "activate" && (intent.mode === "new-stream" || !this.hasCurrentStream())) {
       const row = this.navLayout.getProjection().rows.find(candidate => candidate.id === intent.rowId);
       if (row && this.openNavigationSource(row.menuTarget)) return;
     }
-    this.navigationRuntime.handleNavigationIntent(intent);
+    this.navigationRuntime.handleNavigationIntent(intent.type === "activate" && intent.mode === "new-stream" ? { ...intent, mode: "ordinary" } : intent);
   }
   handleVaultMutation(event: VaultMutationEvent) {
     if (!this.desktop) return this.fallback.handleVaultMutation(event);
@@ -465,8 +469,26 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.legacySeedPending = false; this.readyToLoad = true;
     const snapshot = this.makeSnapshot(choice.scope);
     if (choice.filter) snapshot.browse.filter = choice.filter;
-    this.streams.add(snapshot); this.navLayout.returnToCardsViewIfSinglePane();
+    this.streams.add(snapshot); this.growToFit(); this.navLayout.returnToCardsViewIfSinglePane();
     await this.ensureRuntime(snapshot.id); return snapshot.id;
+  }
+  reopenStream(): void {
+    if (this.stopped || this.unsupported || this.stagedTransfer) return;
+    if (this.streams.reopen()) this.growToFit();
+  }
+  /** Widen the hosting sidebar dock so new streams fit; main-workspace panes and unknown hosts scroll instead. */
+  private growToFit(): void {
+    const state = this.streams.getState();
+    if (state.width <= 0) return;
+    const deficit = resolveRequiredStripWidth(state) - state.width;
+    const workspace = this.app.workspace, root = this.leaf.getRoot?.();
+    if (deficit <= 0 || !root || (root !== workspace.leftSplit && root !== workspace.rightSplit)) return;
+    // Dock sizing is not public API: probe it and keep the scrollable strip when it is absent.
+    const dock = root as unknown as { size?: unknown; setSize?: unknown; collapsed?: unknown };
+    if (dock.collapsed === true || typeof dock.size !== "number" || typeof dock.setSize !== "function") return;
+    const win = this.containerEl.ownerDocument?.defaultView ?? window;
+    const next = Math.min(win.innerWidth - MAIN_WORKSPACE_MIN_WIDTH, dock.size + deficit);
+    if (next > dock.size) (dock.setSize as (size: number) => void).call(dock, next);
   }
   openNewStreamPicker(): void {
     if (this.unsupported) {
@@ -486,26 +508,55 @@ export class FolderCardView extends ItemView implements HoverParent {
     const snapshot = this.streams.getState().streams.find(stream => stream.id === id); if (!snapshot) return;
     const labels = getStreamUiStrings(this.plugin.getUiLanguage());
     switch (command) {
-      case "show-only": this.streams.showOnly(id); break;
-      case "tile": this.streams.select(id); break;
+      case "maximize": this.streams.toggleMaximized(id); break;
       case "collapse": this.streams.setExpanded(id, false); break;
+      case "move-left": this.streams.reorder(id, -1); break;
+      case "move-right": this.streams.reorder(id, 1); break;
       case "close": this.sessions.delete(id); this.streams.remove(id); break;
       case "duplicate": {
-        const duplicate = { ...snapshot, id: nextStreamId(), title: snapshot.title ? `${snapshot.title} (2)` : null, linksPinned: snapshot.scope.kind === "links" ? true : snapshot.linksPinned };
-        this.streams.add(duplicate); break;
+        const duplicate = { ...snapshot, id: nextStreamId(), title: snapshot.title ? `${snapshot.title} (2)` : null,
+          linksPinned: snapshot.scope.kind === "links" ? true : snapshot.linksPinned, width: null };
+        this.streams.add(duplicate); this.growToFit(); break;
       }
       case "rename": new StreamNameModal(this.app, { strings: this.plugin.getUiStrings(), title: labels.rename, name: snapshot.title,
         sourceLabel: this.sourceLabel(snapshot.scope), language: this.plugin.getUiLanguage(), submit: title => { this.streams.update(id, { title }); } }).open(); break;
       case "move-to-pane": case "copy-to-pane": void this.transferStream(id, command === "copy-to-pane"); break;
-      case "manage": {
-        const menu = new Menu();
-        for (const [action, title] of [["show-only", labels.showOnly], ["tile", labels.tile], ["collapse", labels.collapse], ["duplicate", labels.duplicate], ["rename", labels.rename], ["move-to-pane", labels.moveToPane], ["copy-to-pane", labels.copyToPane], ["close", labels.close]] as const) {
-          menu.addItem(item => item.setTitle(title).onClick(() => this.handleStreamCommand(id, action)));
-        }
-        if (anchor) { const rect = anchor.getBoundingClientRect(); menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument); }
-        break;
-      }
+      case "menu": this.openStreamMenu(id, anchor); break;
     }
+  }
+  /** One menu switches streams and holds the stream commands that no longer need permanent controls. */
+  private openStreamMenu(id: string, anchor?: HTMLElement): void {
+    const state = this.streams.getState(), index = state.streams.findIndex(stream => stream.id === id);
+    if (index < 0) return;
+    const labels = getStreamUiStrings(this.plugin.getUiLanguage()), descriptions = this.describeStreams(state.streams);
+    const menu = new Menu();
+    const add = (title: string, icon: string, run: () => void, disabled = false): void => {
+      menu.addItem(item => item.setTitle(title).setIcon(icon).setDisabled(disabled).onClick(run));
+    };
+    for (const stream of state.streams) {
+      const title = descriptions.get(stream.id)!.title;
+      menu.addItem(item => item.setTitle(stream.desiredExpanded ? title : `${title} · ${labels.collapsed}`)
+        .setChecked(stream.id === state.currentStreamId)
+        .onClick(() => { if (!this.transferring.has(stream.id)) this.streams.select(stream.id); }));
+    }
+    menu.addSeparator();
+    add(labels.create, "plus", () => this.openNewStreamPicker());
+    add(labels.duplicate, "columns-2", () => this.handleStreamCommand(id, "duplicate"));
+    add(labels.reopen, "rotate-ccw", () => this.reopenStream(), state.recentlyClosedCount === 0);
+    menu.addSeparator();
+    if (state.streams.length > 1) {
+      const maximized = state.maximizedStreamId === id;
+      add(maximized ? labels.restore : labels.maximize, maximized ? "minimize-2" : "maximize-2", () => this.handleStreamCommand(id, "maximize"));
+      add(labels.collapse, "fold-horizontal", () => this.handleStreamCommand(id, "collapse"));
+      add(labels.moveLeft, "arrow-left", () => this.handleStreamCommand(id, "move-left"), index === 0);
+      add(labels.moveRight, "arrow-right", () => this.handleStreamCommand(id, "move-right"), index === state.streams.length - 1);
+    }
+    add(labels.rename, "pencil", () => this.handleStreamCommand(id, "rename"));
+    add(labels.moveToPane, "external-link", () => this.handleStreamCommand(id, "move-to-pane"));
+    add(labels.copyToPane, "copy", () => this.handleStreamCommand(id, "copy-to-pane"));
+    menu.addSeparator();
+    add(labels.close, "x", () => this.handleStreamCommand(id, "close"));
+    if (anchor) { const rect = anchor.getBoundingClientRect(); menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument); }
   }
   async transferStream(id: string, copy = false): Promise<boolean> {
     if (!this.desktop || this.stopped || this.transferring.has(id)) return false;
@@ -522,7 +573,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       const snapshot = copy ? { ...original, id: nextStreamId(), linksPinned: original.scope.kind === "links" ? true : original.linksPinned } : original;
       const targetLeaf = await this.plugin.createCardStreamLeaf(this.leaf);
       leaf = targetLeaf;
-      await targetLeaf.setViewState({ type: FOLDER_CARD_VIEW, state: { version: 1, streams: [], currentStreamId: null, direction: "horizontal", navigation: this.navigationState } });
+      await targetLeaf.setViewState({ type: FOLDER_CARD_VIEW, state: { version: 1, streams: [], currentStreamId: null, maximizedStreamId: null, navigation: this.navigationState } });
       await targetLeaf.loadIfDeferred?.();
       const target = targetLeaf.view;
       if (!(target instanceof FolderCardView) || target.stopped || this.stopped || !this.streams.getState().streams.some(stream => stream.id === id)) throw new Error("Stream transfer cancelled");
