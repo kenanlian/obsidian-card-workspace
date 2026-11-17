@@ -14,17 +14,11 @@
 ## Documentation Map
 
 - `AGENTS.md` — first read; repo workflow, commands, testing entry points, implementation constraints, and current architecture guardrails
-- `.dev/architecture.md` — detailed architecture source of truth: module boundaries, runtime flows, state ownership, invariants
-- `.dev/state-and-runtime-patterns.md` — runtime ownership, async safety, projection rules, change checklist
-- `.dev/data-and-persistence-patterns.md` — settings, vault/indexed data boundaries, search readiness, mutation persistence rules
-- `.dev/search-benchmark.md` — deterministic search-index benchmark harness: profiles, report schema, metric meanings, isolation guarantees
-- `.dev/ui-patterns.md` — host/Svelte interaction patterns, virtualization, hydration, styling, modal/confirmation guidance
 
-Enumerable implementation details (settings keys, panel fields, module methods) live in TypeScript types and `src/architecture.test.ts`, not in these docs. Source files have no line-count cap. Growth is handled by a later, deliberate refactor.
+The source code, TypeScript types, and tests (including `src/architecture.test.ts`) are the source of truth for the current implementation; they take precedence if this guide conflicts with them. Enumerable implementation details (settings keys, panel fields, module methods) live there. Source files have no line-count cap. Growth is handled by a later, deliberate refactor.
 
 ## Architecture Quick Reference
 
-- **Detailed source of truth**: `.dev/architecture.md`
 - **Plugin ownership**: `src/main.ts` is the plugin shell and assembly point (`SettingsStore`, `SearchCoordinator`, `EditorDropController`, `VaultEventBus`, `MetadataEventBus`, `PinnedPathReconciler`, `TaskIndex`, `TaskWriteService`) plus default card open behavior and `registerTaskEditing`
 - **Per-view ownership**: `src/view/FolderCardView.ts` is `ItemView` lifecycle plus `createViewModules` assembly; per-domain work lives in `src/view/controllers/` (including `MetadataImpactController` and `TaskViewController`), `src/view/actions/` (including `arrangement-actions.ts`), and `src/view/menus/`
 - **Runtime scope**: `CardScope` on the view store is `{ kind: "folder"; path; includeSubfolders } | { kind: "box"; boxId }`. Settings `lastFolderPath` / `activeBoxId` are session-restore projections. Vault root is folder scope with `path === ""`. Folder/Box policy is `resolveSourceCapabilities(scope)`.
@@ -69,7 +63,7 @@ publish ordinary host intents and share insertion text generation with desktop d
 - Recently visited folder scopes keep a bounded per-view cache of sorted `TFile` candidates. A warm switch skips folder traversal, sorting, and the cold timer turn; forced refresh and vault mutations bypass/invalidate it. Card records, filters, and grouping are still rebuilt for the requested scope.
 - Per-view preview hydration uses a five-read scheduler and a runtime-only 512-entry LRU (diagram Blobs additionally capped at 16MiB); viewport demand carries generation, hydration revision, and ordered paths.
 - Full-vault search reconciliation uses eight readers, is serialized/cancellable, and treats plugin version as diagnostic rather than an index compatibility gate.
-- A deterministic search benchmark harness exists (`npm run benchmark:search`, documented in `.dev/search-benchmark.md`). It reuses production preparation, the capped index tokenizer, MiniSearch options, and production `addDocumentsWithYield` over seeded synthetic fixtures (`smoke`, `full`, and `xl`), writes a schema-v2 JSON diagnostic report to a caller-supplied path, and never touches a real vault or IndexedDB. It always enforces correctness assertions. Only when `--max-slice-ms` is passed does it also enforce two blocking-slice ceilings: the flag's value for the production budgeted-ingest phase (`minisearch-budgeted-ingest`) and a fixed 750 ms for `minisearch-to-json` and `persist-structured-clone`. The global max blocking slice is reported and stays outside that gate. Deliberate large-vault runs use `--profile xl --max-slice-ms 300`. The `xl` profile stays out of CI.
+- A deterministic search benchmark harness exists (`npm run benchmark:search`). It reuses production preparation, the capped index tokenizer, MiniSearch options, and production `addDocumentsWithYield` over seeded synthetic fixtures (`smoke`, `full`, and `xl`), writes a schema-v2 JSON diagnostic report to a caller-supplied path, and never touches a real vault or IndexedDB. It always enforces correctness assertions. Only when `--max-slice-ms` is passed does it also enforce two blocking-slice ceilings: the flag's value for the production budgeted-ingest phase (`minisearch-budgeted-ingest`) and a fixed 750 ms for `minisearch-to-json` and `persist-structured-clone`. The global max blocking slice is reported and stays outside that gate. Deliberate large-vault runs use `--profile xl --max-slice-ms 300`. The `xl` profile stays out of CI.
 - The persisted index is a structured-clone object, not a JSON string. Do not reintroduce `JSON.stringify` on a whole-vault index: it blocks the main thread and can exceed the engine's maximum string length.
 - Index documents are capped at 512KB of markdown each and, on the index tokenizer, at 50,000 terms per indexed field (`title` and `content`). The index covers titles for all Vault files independently of display visibility; only Markdown contributes body content, and attachments are never read for search. Content past the term budget is not searchable. Query tokenization stays uncapped.
 - A guarded full rebuild persists an attempt marker before it starts, clears it on success, and restores the prior count after cooperative cancellation has cleaned up. Two consecutive unfinished builds suspend automatic rebuilding until an explicit command runs.
@@ -106,7 +100,6 @@ publish ordinary host intents and share insertion text generation with desktop d
 | `src/__mocks__/` | Vitest mocks for `obsidian` and `FolderCardPanel.svelte`, plus the shared FolderCardView node harness |
 | `scripts/` | Release scripts (`sync-version.mjs`, `check-release.mjs`) |
 | `styles.css` | Single flat CSS file (design tokens, Obsidian theme integration) |
-| `.dev/` | Private companion-linked developer docs: `architecture.md`, `state-and-runtime-patterns.md`, `data-and-persistence-patterns.md`, `ui-patterns.md`, `decisions/` |
 | `docs/` | Public user documentation |
 | `.github/workflows/` | CI (`ci.yml`) and release (`release.yml`) automation |
 
@@ -117,7 +110,7 @@ publish ordinary host intents and share insertion text generation with desktop d
 | `npm install` | Install dependencies |
 | `npm run dev` | Watch build with inline sourcemaps and Svelte dev mode |
 | `npm run build` | Production build (`main.js`, no sourcemaps) |
-| `npm run benchmark:search` | Deterministic search-index benchmark (`--profile smoke\|full\|xl`, `--output <absolute path>`, optional `--seed <uint32>`, optional `--max-slice-ms <ms>`). Diagnostic report; the dual slice gate runs only when `--max-slice-ms` is passed. Never part of the production build — see `.dev/search-benchmark.md` |
+| `npm run benchmark:search` | Deterministic search-index benchmark (`--profile smoke\|full\|xl`, `--output <absolute path>`, optional `--seed <uint32>`, optional `--max-slice-ms <ms>`). Diagnostic report; the dual slice gate runs only when `--max-slice-ms` is passed. Never part of the production build |
 | `npm run lint` | Official `eslint-plugin-obsidianmd` source scan (`eslint src package.json`); scanner-equivalent severities and exclusions in `eslint.config.mjs` |
 | `npm run check` | TypeScript type check (`tsc --noEmit`) |
 | `npm run check:svelte` | Svelte type check (`svelte-check --tsconfig ./tsconfig.json`) |
