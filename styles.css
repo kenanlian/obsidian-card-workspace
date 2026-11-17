@@ -197,6 +197,7 @@
 .folder-card-view .fce-stream-fallback-bar { display: flex; align-items: center; gap: 4px; padding: 6px; border-bottom: 1px solid var(--fce-border); }
 .folder-card-view .fce-stream-fallback-bar > .fce-stream-switcher { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-card-view .fce-stream-spine { display: flex; flex-shrink: 0; align-items: flex-start; justify-content: center; position: relative; height: 100%; padding: 10px 0; border: 0; border-right: 1px solid var(--fce-border); border-radius: 0; background: var(--fce-surface); box-shadow: none; color: var(--fce-text-muted); cursor: pointer; scroll-snap-align: start; }
+.folder-card-view .fce-stream-spine:last-child { border-right: 0; }
 .folder-card-view .fce-stream-spine:hover { background: var(--background-modifier-hover); color: var(--fce-text); }
 .folder-card-view .fce-stream-spine-title { max-height: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; writing-mode: vertical-rl; font-size: var(--font-ui-smaller, 12px); }
 .folder-card-view .fce-stream-splitter { flex: 0 0 6px; background: linear-gradient(var(--fce-border), var(--fce-border)) center / 1px 100% no-repeat; cursor: col-resize; touch-action: none; }

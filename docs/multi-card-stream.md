@@ -28,7 +28,7 @@ The stream menu lists every stream (a check marks the current one) and offers:
 - **Move left** / **Move right** reorder streams; dragging a stream's title or strip does the same.
 - **Close stream** removes it without deleting notes or boxes. Toolbars also show a close button when the pane has more than one stream.
 
-Drag the thin separator to the right of a stream to change its width (minimum 240 px). The last stream stretches to fill spare space. There is no fixed stream-count limit, and streams never collapse automatically. Streams scrolled out of view pause their preview work. A narrow desktop pane uses the existing navigation/content switch.
+Drag a thin separator between streams to change the width of the stream to its left (minimum 240 px). The outer right edge has no stream resize handle: use Obsidian's native sidebar divider to resize the sidebar. The last expanded stream stretches to fill spare space. There is no fixed stream-count limit, and streams never collapse automatically. Streams scrolled out of view pause their preview work. A narrow desktop pane uses the existing navigation/content switch.
 
 All streams may be collapsed or closed. With no current target, choosing a navigation source creates a new stream. Closing or moving the last stream leaves an empty pane offering **New stream…**, **Reopen closed stream**, and the navigation toggle. **Reopen closed stream** restores up to ten recently closed streams in the same session; that history is cleared on restart.
 

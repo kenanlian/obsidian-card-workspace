@@ -390,7 +390,7 @@ describe("desktop leaf stream integration", () => {
     vi.stubGlobal("innerWidth", 1800);
     const second = (await view.createStream({ scope: createFolderScope("", true) }))!;
     expect(view.streams.getState().streams.map(value => value.width)).toEqual([1200, 320]);
-    expect(dock.setSize).toHaveBeenLastCalledWith(932);
+    expect(dock.setSize).toHaveBeenLastCalledWith(926);
     view.handleStreamCommand(second, "duplicate");
     expect(view.streams.getState().streams.map(value => value.width)).toEqual([1200, 320, 320]);
     expect(dock.setSize).toHaveBeenLastCalledWith(1400);

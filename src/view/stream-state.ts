@@ -337,7 +337,7 @@ export interface StreamLayoutItem {
   id: string;
   display: "stream" | "spine";
   width: number;
-  /** A resize separator follows this item. */
+  /** A resize separator follows this expanded item only when another item follows. */
   separator: boolean;
 }
 
@@ -350,13 +350,15 @@ export function resolveStreamLayout(state: Pick<LeafStreamState, "streams" | "ma
   const stage = Math.max(0, state.width);
   const maximized = state.maximizedStreamId === null ? undefined : state.streams.find(stream => stream.id === state.maximizedStreamId);
   if (maximized) return [{ id: maximized.id, display: "stream", width: stage > 0 ? stage : maximized.width ?? STREAM_DEFAULT_WIDTH, separator: false }];
-  const separator = state.streams.length > 1;
   const expanded = state.streams.filter(stream => stream.desiredExpanded);
+  const lastStream = state.streams.at(-1);
+  // The host owns resizing at the outer edge; only internal boundaries need handles.
+  const separatorCount = expanded.length - (lastStream?.desiredExpanded ? 1 : 0);
   const widths = new Map<string, number>();
   if (stage <= 0) {
     for (const stream of expanded) widths.set(stream.id, stream.width ?? STREAM_DEFAULT_WIDTH);
   } else {
-    const base = stage - (state.streams.length - expanded.length) * STREAM_SPINE_WIDTH - (separator ? expanded.length * STREAM_SEPARATOR_SIZE : 0);
+    const base = stage - (state.streams.length - expanded.length) * STREAM_SPINE_WIDTH - separatorCount * STREAM_SEPARATOR_SIZE;
     if (expanded.length === 1) widths.set(expanded[0].id, Math.max(0, base));
     else if (expanded.length > 1) {
       const flexible = expanded.filter(stream => stream.width === null);
@@ -369,7 +371,7 @@ export function resolveStreamLayout(state: Pick<LeafStreamState, "streams" | "ma
     }
   }
   return state.streams.map((stream): StreamLayoutItem => stream.desiredExpanded
-    ? { id: stream.id, display: "stream", width: widths.get(stream.id)!, separator }
+    ? { id: stream.id, display: "stream", width: widths.get(stream.id)!, separator: stream.id !== lastStream?.id }
     : { id: stream.id, display: "spine", width: STREAM_SPINE_WIDTH, separator: false });
 }
 

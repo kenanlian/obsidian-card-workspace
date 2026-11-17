@@ -90,7 +90,7 @@ function entry(id: string, index: number, overrides: Partial<StreamPanelEntry> =
  return { id, title: id, customTitle: null, ordinal: null, display: "stream", width: 300, separator: true, current: index === 0, pending: false, panelModel: createPanelModel(createInitialPanelState()), props: {}, ...overrides };
 }
 function createWorkspace(): StreamPanelState {
- const entries = ["one", "two", "three"].map((id, index) => entry(id, index));
+ const entries = ["one", "two", "three"].map((id, index) => entry(id, index, { separator: index < 2 }));
  return { entries, currentStreamId: "one", maximizedStreamId: null, navigationVisible: true, singlePane: false, navPanelModel: entries[0].panelModel, navProps: {}, labels: getStreamUiStrings("en"), recentlyClosedCount: 1, unsupported: false };
 }
 type RenderProps = {
@@ -180,7 +180,8 @@ describe("StreamWorkspacePanel", () => {
   const target = await render({ model: createStreamPanelModel(state), onResize, onStreamWidth });
   expect(onShellResize).toHaveBeenCalledWith(1100); expect(onResize).toHaveBeenCalledWith(1100, 700);
   const splitters = target.querySelectorAll<HTMLElement>('[role="separator"].fce-stream-splitter');
-  expect(splitters).toHaveLength(3);
+  expect(splitters).toHaveLength(2);
+  expect(target.querySelector(".fce-stream-stage")!.lastElementChild?.getAttribute("data-stream-id")).toBe("three");
   splitters[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })); expect(onStreamWidth).toHaveBeenLastCalledWith("one", 316);
   splitters[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", shiftKey: true, bubbles: true })); expect(onStreamWidth).toHaveBeenLastCalledWith("two", 252);
  });

@@ -33,7 +33,7 @@ window.renderStreams=async(width=1400,height=760,legacy=false)=>{
  const target=document.querySelector('#mount');target.style.width=width+'px';target.style.height=height+'px';
  window.events=[];window.stageSizes=[];window.rootWidths=[];
  const toggleNav=()=>update({navigationVisible:!model.getState().navigationVisible});
- const layout=[['one','stream',420,true],['two','stream',420,true],['three','spine',28,false],['four','stream',700,true]];
+ const layout=[['one','stream',420,true],['two','stream',420,true],['three','spine',28,false],['four','stream',700,false]];
  const entries=layout.map(([id,display,width,separator],i)=>({id,title:'Folder '+id,customTitle:null,ordinal:null,display,width,separator,current:i===0,pending:false,panelModel:makePanel(id),props:{onToggleNavPane:()=>toggleNav()}}));
  const model=createStreamPanelModel({entries,currentStreamId:'one',maximizedStreamId:null,navigationVisible:true,singlePane:false,navPanelModel:entries[0].panelModel,navProps:{onShellResize:w=>{window.rootWidths.push(w);const old=model.getState();if(old.singlePane!==(w<640))model.setState({...old,singlePane:w<640});}},labels:getStreamUiStrings('en'),recentlyClosedCount:1,unsupported:false});
  window.streamModel=model;
@@ -71,6 +71,8 @@ try {
  assert.equal(await page.locator('.fce-stream-panel').count(), 3);
  assert.equal(await page.locator('.fce-stream-spine').count(), 1);
  assert.equal(await page.locator('.fce-nav-pane').count(), 1);
+ assert.equal(await page.locator('.fce-stream-splitter').count(), 2);
+ assert.equal(await page.locator('.fce-stream-stage > :last-child').getAttribute('data-stream-id'), 'four');
  for (const [id, width] of [['one', 420], ['two', 420], ['four', 700]]) {
   const panel = page.locator(`[data-stream-id="${id}"]`);
   assert(Math.abs((await panel.boundingBox()).width - width) <= 1, `${id} keeps its pixel width`);
@@ -115,6 +117,19 @@ try {
  await page.evaluate(() => window.selectStream('four')); await page.evaluate(() => new Promise(requestAnimationFrame));
  const four = await page.locator('[data-stream-id="four"]').boundingBox(), visible = await stageLocator.boundingBox();
  assert(four.x >= visible.x - 1 && four.x + four.width <= visible.x + visible.width + 1, 'programmatic target is revealed');
+ // The outer edge has no stream resize hit target, including after horizontal scrolling.
+ await stageLocator.evaluate(node => { node.scrollLeft = node.scrollWidth; });
+ assert.equal(await stageLocator.evaluate(node => {
+  const rect = node.getBoundingClientRect();
+  return !!document.elementFromPoint(rect.right - 2, rect.top + 100)?.closest('.fce-stream-splitter');
+ }), false);
+ await page.evaluate(() => {
+  window.expandedEntries = window.streamModel.getState().entries;
+  window.updateStreams({ entries: window.expandedEntries.map(entry => entry.id === 'four' ? { ...entry, display: 'spine', width: 28, panelModel: null } : entry) });
+ });
+ assert.equal(await page.locator('.fce-stream-stage > :last-child').getAttribute('data-stream-item'), 'four');
+ assert.equal(await page.locator('.fce-stream-stage > :last-child').evaluate(node => getComputedStyle(node).borderRightWidth), '0px');
+ await page.evaluate(() => window.updateStreams({ entries: window.expandedEntries }));
  await page.locator('[data-stream-id="one"] .fce-toolbar-buttons > button[aria-pressed]').click();
  assert.equal(await page.locator('.fce-nav-pane').count(), 0);
  assert.equal(await page.locator('[data-stream-id="one"] .fce-toolbar-buttons > button[aria-pressed]').count(), 1);
@@ -136,7 +151,7 @@ try {
  await page.evaluate(() => window.renderStreams(320, 760, true));
  assert.equal(await page.locator('.fce-stream-workspace').count(), 0); assert.equal(await page.locator('.fce-nav-pane').count(), 1);
  assert.deepEqual(errors, []);
- const result = { passed: true, checks: ['two-column strip without extra bars', 'pixel-width streams and spines', 'horizontal overflow', 'toolbar switcher and close', 'retained viewport on target switch', 'width splitters', 'drag reorder', 'programmatic reveal', 'navigation toggle on first stream', 'compact sidebar', 'empty state', 'legacy mobile default'], browserErrors: errors };
+ const result = { passed: true, checks: ['two-column strip without extra bars', 'pixel-width streams and spines', 'horizontal overflow', 'toolbar switcher and close', 'retained viewport on target switch', 'width splitters', 'outer edge without stream resize handle or spine border', 'drag reorder', 'programmatic reveal', 'navigation toggle on first stream', 'compact sidebar', 'empty state', 'legacy mobile default'], browserErrors: errors };
  if (process.argv.includes('--output')) await writeFile(process.argv[process.argv.indexOf('--output') + 1], JSON.stringify(result, null, 2) + '\n');
  console.log(JSON.stringify(result));
 } finally { await browser.close(); }
