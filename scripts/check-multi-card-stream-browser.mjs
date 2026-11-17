@@ -35,7 +35,10 @@ window.renderStreams=async(width=1400,height=760,legacy=false)=>{
  const toggleNav=()=>update({navigationVisible:!model.getState().navigationVisible});
  const layout=[['one','stream',420,true],['two','stream',420,true],['three','spine',28,false],['four','stream',700,false]];
  const entries=layout.map(([id,display,width,separator],i)=>({id,title:'Folder '+id,customTitle:null,ordinal:null,display,width,separator,current:i===0,pending:false,panelModel:makePanel(id),props:{onToggleNavPane:()=>toggleNav()}}));
- const model=createStreamPanelModel({entries,currentStreamId:'one',maximizedStreamId:null,navigationVisible:true,singlePane:false,navPanelModel:entries[0].panelModel,navProps:{onShellResize:w=>{window.rootWidths.push(w);const old=model.getState();if(old.singlePane!==(w<640))model.setState({...old,singlePane:w<640});}},labels:getStreamUiStrings('en'),recentlyClosedCount:1,unsupported:false});
+ const model=createStreamPanelModel({entries,currentStreamId:'one',maximizedStreamId:null,navigationVisible:true,singlePane:false,navPanelModel:entries[0].panelModel,navProps:{onNavPaneResize:width=>{
+  window.events.push({command:'nav-width',width});
+  model.getState().navPanelModel.mutate(state=>{state.nav={...state.nav,paneWidth:width};});
+ },onShellResize:w=>{window.rootWidths.push(w);const old=model.getState();if(old.singlePane!==(w<640))model.setState({...old,singlePane:w<640});}},labels:getStreamUiStrings('en'),recentlyClosedCount:1,unsupported:false});
  window.streamModel=model;
  const update=changes=>model.setState({...model.getState(),...changes});
  window.updateStreams=update;
@@ -93,6 +96,41 @@ try {
  const stage = await stageLocator.boundingBox();
  const reported = await page.evaluate(() => window.stageSizes.at(-1)); assert.equal(reported.width, Math.round(stage.width)); assert.equal(reported.height, Math.round(stage.height));
  assert.equal(await page.evaluate(() => window.rootWidths.at(-1)), 1400);
+ // Real layout must follow every pointer move, before the host commits on release.
+ const navLocator = page.locator('.fce-nav-pane'), navHandle = page.locator('.fce-nav-resize-handle');
+ const navStart = await navHandle.boundingBox(), stageStart = await stageLocator.boundingBox();
+ const navX = navStart.x + navStart.width / 2, navY = navStart.y + 60;
+ await page.mouse.move(navX, navY); await page.mouse.down();
+ for (const delta of [30, 60, 80]) {
+  await page.mouse.move(navX + delta, navY, { steps: 3 });
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  assert.equal((await navLocator.boundingBox()).width, 240 + delta, 'navigation width follows the pointer');
+  assert.equal((await stageLocator.boundingBox()).x, stageStart.x + delta, 'stream boundary follows the pointer');
+  assert.equal(await page.evaluate(() => window.streamModel.getState().navPanelModel.getState().nav.paneWidth), 240, 'drag does not persist intermediate widths');
+ }
+ await page.mouse.up();
+ await page.evaluate(() => new Promise(requestAnimationFrame));
+ assert.deepEqual(await page.evaluate(() => window.events), [{ command: 'nav-width', width: 320 }]);
+ assert.equal((await stageLocator.boundingBox()).x, stageStart.x + 80, 'release does not jump');
+ // Cancellation restores both columns without committing a second width.
+ const cancelStart = await navHandle.boundingBox();
+ await page.mouse.move(cancelStart.x + cancelStart.width / 2, navY); await page.mouse.down();
+ await page.mouse.move(cancelStart.x + cancelStart.width / 2 + 40, navY, { steps: 3 });
+ await page.evaluate(() => new Promise(requestAnimationFrame));
+ assert.equal((await navLocator.boundingBox()).width, 360);
+ await navHandle.dispatchEvent('pointercancel', { pointerId: 1 });
+ await page.mouse.up();
+ await page.evaluate(() => new Promise(requestAnimationFrame));
+ assert.equal((await navLocator.boundingBox()).width, 320);
+ assert.equal((await stageLocator.boundingBox()).x, stageStart.x + 80);
+ assert.equal(await page.evaluate(() => window.events.length), 1);
+ // Host width changes remain authoritative after the transient drag ends.
+ await page.evaluate(() => {
+  window.streamModel.getState().navPanelModel.mutate(state => { state.nav = { ...state.nav, paneWidth: 240 }; });
+  window.events = [];
+ });
+ await page.evaluate(() => new Promise(requestAnimationFrame));
+ assert.equal((await navLocator.boundingBox()).width, 240);
  // Pointer selection switches the target, keeps viewports mounted, and does not scroll the strip.
  await page.locator('[data-stream-id="one"] .fce-list').evaluate(node => { window.firstViewport = node; node.scrollTop = 300; });
  await page.locator('[data-stream-id="two"] .fce-list').click({ position: { x: 20, y: 200 } });
@@ -143,6 +181,8 @@ try {
  await page.evaluate(() => window.renderStreams(320, 760));
  await page.waitForSelector('.fce-stream-workspace.is-single');
  assert.equal(await stageLocator.isVisible(), false);
+ assert.equal((await navLocator.boundingBox()).width, 320, 'single-pane navigation fills the available width');
+ assert.equal(await navHandle.isVisible(), false);
  await page.evaluate(() => window.updateStreams({ navigationVisible: false }));
  assert.equal(await stageLocator.isVisible(), true);
  assert.equal(await page.locator('.fce-stream-panel .fce-toolbar-buttons > button[aria-pressed]').count(), 3);
@@ -156,7 +196,7 @@ try {
  await page.evaluate(() => window.renderStreams(320, 760, true));
  assert.equal(await page.locator('.fce-stream-workspace').count(), 0); assert.equal(await page.locator('.fce-nav-pane').count(), 1);
  assert.deepEqual(errors, []);
- const result = { passed: true, checks: ['two-column strip without extra bars', 'pixel-width streams and spines', 'horizontal overflow', 'toolbar switcher and close', 'retained viewport on target switch', 'width splitters', 'outer edge without stream resize handle or spine border', 'drag reorder', 'programmatic reveal', 'navigation toggle on first stream', 'compact sidebar', 'empty state', 'legacy mobile default'], browserErrors: errors };
+ const result = { passed: true, checks: ['two-column strip without extra bars', 'pixel-width streams and spines', 'horizontal overflow', 'toolbar switcher and close', 'retained viewport on target switch', 'width splitters', 'live navigation resize with release-only commit and cancellation', 'outer edge without stream resize handle or spine border', 'drag reorder', 'programmatic reveal', 'navigation toggle on first stream', 'compact sidebar', 'empty state', 'legacy mobile default'], browserErrors: errors };
  if (process.argv.includes('--output')) await writeFile(process.argv[process.argv.indexOf('--output') + 1], JSON.stringify(result, null, 2) + '\n');
  console.log(JSON.stringify(result));
 } finally { await browser.close(); }

@@ -180,8 +180,9 @@
 /* Desktop stream workspace: one navigation column and a horizontally scrolling strip of mounted streams. */
 .folder-card-view .fce-stream-workspace { display: flex; height: 100%; min-width: 0; min-height: 0; color: var(--fce-text); background: var(--fce-bg); }
 .folder-card-view .fce-stream-navigation.fce-shell { flex-direction: column; }
-.folder-card-view .fce-stream-navigation { display: flex; flex-direction: column; flex: 0 0 var(--fce-stream-nav-width, 240px); width: var(--fce-stream-nav-width, 240px); min-height: 0; border-right: 1px solid var(--fce-border); background: var(--fce-surface); }
-.folder-card-view .fce-stream-navigation > .fce-nav-pane { flex: 1 1 auto; width: 100% !important; min-height: 0; border-right: 0; }
+/* NavigationPane owns the live drag width; let it size the wrapper before the host saves on release. */
+.folder-card-view .fce-stream-navigation { display: flex; flex-direction: column; flex: 0 0 auto; min-height: 0; border-right: 1px solid var(--fce-border); background: var(--fce-surface); }
+.folder-card-view .fce-stream-navigation > .fce-nav-pane { flex: 1 1 auto; min-height: 0; border-right: 0; }
 .folder-card-view .fce-stream-stage { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x proximity; }
 .folder-card-view .fce-stream-stage.is-hidden { display: none; }
 .folder-card-view .fce-stream-stage.is-reordering { cursor: grabbing; user-select: none; }
@@ -210,6 +211,7 @@
 .folder-card-view .fce-stream-empty button { margin: 4px; }
 .folder-card-view .fce-stream-error { padding: 8px; color: var(--text-error); }
 .folder-card-view .fce-stream-workspace.is-single.is-source-visible .fce-stream-navigation { flex: 1 1 auto; width: 100%; border-right: 0; }
+.folder-card-view .fce-stream-workspace.is-single .fce-stream-navigation > .fce-nav-pane { width: 100% !important; }
 .folder-card-view .fce-stream-workspace.is-single .fce-nav-resize-handle { display: none; }
 
 /* === nav === */

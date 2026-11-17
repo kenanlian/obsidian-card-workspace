@@ -160,7 +160,7 @@
 
 <div class="fce-stream-workspace" class:is-single={single} class:is-source-visible={showSources} use:measureRoot>
   {#if showSources && navState}
-    <div class="fce-stream-navigation fce-shell" data-fce-font-size={navState.appearance.uiFontSize ?? "default"} data-fce-density={navState.appearance.uiDensity ?? "default"} style={`--fce-stream-nav-width: ${navState.nav.paneWidth}px`}>
+    <div class="fce-stream-navigation fce-shell" data-fce-font-size={navState.appearance.uiFontSize ?? "default"} data-fce-density={navState.appearance.uiDensity ?? "default"}>
       <NavigationPane {...workspace.navProps} strings={navState.strings} nav={{ ...navState.nav, visible: true }} scope={navState.scope} viewMode={navState.projection.viewMode} activeFilterTags={navState.projection.activeFilterTags} />
     </div>
   {/if}
