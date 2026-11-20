@@ -16,6 +16,7 @@ export { SearchPreviewSourceCache } from "./search-preview-source";
 export type {
   SearchableDocument,
   SearchExecutionMode,
+  SearchFieldScope,
   SearchIndexHealthSnapshot,
   SearchIndexObservabilitySnapshot,
   SearchQueryExecutionState,

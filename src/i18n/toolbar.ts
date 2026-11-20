@@ -104,6 +104,18 @@ export interface ToolbarStrings {
     placeholder: string;
     inputLabel: string;
     clear: string;
+    fieldScopeLabel: string;
+    fieldScopes: { all: string; title: string };
+    sortLabel: string;
+    sorts: {
+      relevance: string;
+      "matches-desc": string;
+      "matches-asc": string;
+      "mtime-desc": string;
+      "mtime-asc": string;
+      "ctime-desc": string;
+      "ctime-asc": string;
+    };
     history: string;
     deleteHistory: (query: string) => string;
     clearHistory: string;
@@ -220,6 +232,18 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       placeholder: "Search notes",
       inputLabel: "Search notes",
       clear: "Clear search query",
+      fieldScopeLabel: "Search fields",
+      fieldScopes: { all: "Title and body", title: "Title only" },
+      sortLabel: "Search result order",
+      sorts: {
+        relevance: "Relevance",
+        "matches-desc": "Match count (high to low)",
+        "matches-asc": "Match count (low to high)",
+        "mtime-desc": "Modified time (newest first)",
+        "mtime-asc": "Modified time (oldest first)",
+        "ctime-desc": "Created time (newest first)",
+        "ctime-asc": "Created time (oldest first)",
+      },
       history: "Search history",
       deleteHistory: (query) => `Delete history: ${query}`,
       clearHistory: "Clear history",
@@ -333,6 +357,18 @@ export const toolbarStrings: Record<UiLanguage, ToolbarStrings> = {
       placeholder: "搜索笔记",
       inputLabel: "搜索笔记",
       clear: "清除搜索内容",
+      fieldScopeLabel: "搜索范围",
+      fieldScopes: { all: "标题和正文", title: "仅标题" },
+      sortLabel: "搜索结果排序",
+      sorts: {
+        relevance: "相关性",
+        "matches-desc": "命中次数（多 -> 少）",
+        "matches-asc": "命中次数（少 -> 多）",
+        "mtime-desc": "修改时间（新 -> 旧）",
+        "mtime-asc": "修改时间（旧 -> 新）",
+        "ctime-desc": "创建时间（新 -> 旧）",
+        "ctime-asc": "创建时间（旧 -> 新）",
+      },
       history: "搜索历史",
       deleteHistory: (query) => `删除历史：${query}`,
       clearHistory: "清空历史",

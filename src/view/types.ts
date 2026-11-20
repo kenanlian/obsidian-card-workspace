@@ -26,6 +26,7 @@ export interface CardFileDragStartPayload {
 export type CardFileDragStarter = (payload: CardFileDragStartPayload) => (() => void) | null;
 
 export type {
+  SearchFieldScope,
   SearchIndexPersistenceHealth,
   SearchIndexReadinessState,
   SearchIndexRebuildReason,
@@ -64,7 +65,11 @@ export interface PipelineSearchInput {
   query: string;
   execution: SearchQueryExecutionState;
   orderedPaths?: string[];
+  sort?: SearchResultSort;
+  matchCountsByPath?: Readonly<Record<string, number>>;
 }
+
+export type SearchResultSort = keyof import("../i18n").ToolbarStrings["search"]["sorts"];
 
 /**
  * A single membership rule for a card box.

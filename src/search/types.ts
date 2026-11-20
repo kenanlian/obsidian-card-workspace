@@ -139,6 +139,8 @@ export interface SearchIndexHealthSnapshot {
   detail: string | null;
 }
 
+export type SearchFieldScope = "all" | "title";
+
 /**
  * Query payload passed from runtime coordinator to SearchService.
  * The service receives projection inputs but does not own query/panel state.
@@ -148,6 +150,7 @@ export interface SearchIndexHealthSnapshot {
 export interface SearchQueryRequest {
   query: string;
   candidatePaths: string[];
+  fieldScope?: SearchFieldScope;
 }
 
 /**
@@ -201,6 +204,8 @@ export interface SearchServiceSnapshot {
   contentRevision: number;
   /** Runtime-only generation; advances only after a successful whole-index restore or replacement. */
   indexGeneration: number;
+  /** Advances when background reconciliation makes additional match counts available. */
+  matchCountRevision?: number;
 }
 
 /** Lightweight local-only observability payload for command/debug surfaces. */

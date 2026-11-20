@@ -32,6 +32,7 @@ import {
   SearchReconciliationRunner,
 } from "./SearchReconciliationRunner";
 import {
+  type SearchFieldScope,
   type SearchIndexHealthSnapshot,
   type SearchQueryResult,
   type SearchServiceSnapshot,
@@ -80,6 +81,7 @@ interface SearchIndexManagerOptions {
 
 type SearchIndexMiniSearchResult = {
   path?: string;
+  title?: string;
   score?: number;
   match?: Record<string, string[]>;
 };
@@ -155,6 +157,7 @@ export class SearchIndexManager {
   /** Monotonic in-memory content revision; surfaced through `getSnapshot()`. */
   private contentRevision = 0;
   private indexGeneration = 0;
+  private matchCountRevision = 0;
   private readonly listeners = new Set<(snapshot: SearchServiceSnapshot) => void>();
   private readonly documentsByPath = new Map<string, SearchableDocument>();
   private documentCatalog = new SearchDocumentCatalog();
@@ -243,6 +246,7 @@ export class SearchIndexManager {
       ...this.snapshot,
       contentRevision: this.contentRevision,
       indexGeneration: this.indexGeneration,
+      matchCountRevision: this.matchCountRevision,
       health: {
         ...this.snapshot.health,
       },
@@ -457,7 +461,7 @@ export class SearchIndexManager {
     return clearResult;
   }
 
-  async search(query: string, candidatePaths: string[]): Promise<SearchIndexManagerSearchResult> {
+  async search(query: string, candidatePaths: string[], fieldScope: SearchFieldScope = "all"): Promise<SearchIndexManagerSearchResult> {
     if (this.snapshot.status !== "ready") {
       return {
         orderedPaths: [],
@@ -472,8 +476,12 @@ export class SearchIndexManager {
     }
 
     const allowed = new Set(candidatePaths);
-    const results = this.index.search(trimmed, MINISEARCH_SEARCH_OPTIONS) as SearchIndexMiniSearchResult[];
+    const searchOptions = fieldScope === "title"
+      ? { ...MINISEARCH_SEARCH_OPTIONS, fields: ["title"] }
+      : MINISEARCH_SEARCH_OPTIONS;
+    const results = this.index.search(trimmed, searchOptions) as SearchIndexMiniSearchResult[];
     const ordered: string[] = [];
+    const titles = new Map<string, string>();
     const matchFieldsByPath: NonNullable<SearchQueryResult["matchFieldsByPath"]> = {};
     for (const result of results) {
       if (typeof result.path !== "string") {
@@ -483,13 +491,18 @@ export class SearchIndexManager {
         continue;
       }
       ordered.push(result.path);
+      if (fieldScope === "title" && typeof result.title === "string") titles.set(result.path, result.title);
       matchFieldsByPath[result.path] = [...new Set(Object.values(result.match ?? {}).flat())]
         .filter((field): field is "title" | "content" => field === "title" || field === "content");
     }
 
     return {
       orderedPaths: ordered,
-      matchCountsByPath: buildMatchCountsByPath(trimmed, ordered, this.documentsByPath),
+      matchCountsByPath: buildMatchCountsByPath(trimmed, ordered, (path) => {
+        const document = this.documentsByPath.get(path);
+        if (fieldScope === "title") return titles.get(path) ?? document?.title;
+        return document ? `${document.title} ${document.content}` : undefined;
+      }),
       matchFieldsByPath,
     };
   }
@@ -696,10 +709,12 @@ export class SearchIndexManager {
     if (!isCurrent()) return true;
 
     const release = await this.mutationGate.acquire();
+    let hydrated = false;
     try {
+      if (!isCurrent()) return true;
       const journal = this.mutationJournal ?? [];
       this.mutationJournal = null;
-      if (!journal.some(isUnmergeableMutation)) this.mergeHydratedDocuments(documents, journal);
+      if (!journal.some(isUnmergeableMutation)) hydrated = this.mergeHydratedDocuments(documents, journal);
     } finally {
       this.mutationJournal = null;
       release();
@@ -708,6 +723,10 @@ export class SearchIndexManager {
     if (!this.documentCatalog.matches(this.documentSource.readCatalogSnapshot())) {
       this.queuedRebuildDetail = "Vault changed during reconciliation; full rebuild required.";
     }
+    if (hydrated) {
+      this.matchCountRevision += 1;
+      this.emit();
+    }
     return true;
   }
 
@@ -715,7 +734,7 @@ export class SearchIndexManager {
    * Read documents win everywhere except the paths a live mutation already
    * touched during the pass: those hold a newer value than the read (C6).
    */
-  private mergeHydratedDocuments(documents: SearchableDocument[], journal: SearchVaultMutation[]): void {
+  private mergeHydratedDocuments(documents: SearchableDocument[], journal: SearchVaultMutation[]): boolean {
     const touched = new Set<string>();
     for (const event of journal) {
       touched.add(event.path);
@@ -723,14 +742,18 @@ export class SearchIndexManager {
     }
 
     const readPaths = new Set<string>();
+    let hydrated = false;
     for (const document of documents) {
       readPaths.add(document.path);
-      if (!touched.has(document.path)) this.documentsByPath.set(document.path, document);
+      if (touched.has(document.path)) continue;
+      if (!this.documentsByPath.has(document.path)) hydrated = true;
+      this.documentsByPath.set(document.path, document);
     }
 
     for (const path of this.documentsByPath.keys()) {
       if (!readPaths.has(path) && !touched.has(path)) this.documentsByPath.delete(path);
     }
+    return hydrated;
   }
 
   private publishReplacementSuccess(kind: "reconcile" | "rebuild", detail: string, at: number): void {

@@ -17,7 +17,7 @@
   import { DEFAULT_TASK_GROUP, DEFAULT_TASK_SORT, type TaskGroupSpec, type TaskSortSpec } from "../task-view-settings";
   import type { DefaultViewMode } from "../settings";
   import { buildScopeLabel } from "./scope-label";
-  import type { BulkRuntimePanelState, SearchStatus, SearchHistoryCommand, SearchQueryResetSource, ToolbarActionPayload } from "./types";
+  import type { BulkRuntimePanelState, SearchFieldScope, SearchStatus, SearchHistoryCommand, SearchQueryResetSource, SearchResultSort, ToolbarActionPayload } from "./types";
   import ToolbarBoxPicker from "./ToolbarBoxPicker.svelte";
   import ToolbarBulkStrip from "./ToolbarBulkStrip.svelte";
   interface BoxCommandPayload {
@@ -71,6 +71,8 @@
     onGroupCollapseCommand?: (payload: GroupCollapseCommandPayload) => void;
     onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
     onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
+    onSearchFieldScopeChange?: (fieldScope: SearchFieldScope) => void;
+    onSearchSortChange?: (sort: SearchResultSort) => void;
     onSearchHistoryCommand?: (payload: SearchHistoryCommand) => void;
     onBoxCommand?: (payload: BoxCommandPayload) => void;
     onTaskSortChange?: (payload: Partial<TaskSortSpec>) => void;
@@ -164,6 +166,8 @@
     onGroupCollapseCommand,
     onSearchQueryChange,
     onSearchQueryReset,
+    onSearchFieldScopeChange,
+    onSearchSortChange,
     onSearchHistoryCommand,
     onBoxCommand,
     onTaskSortChange,
@@ -187,6 +191,10 @@
   const taskSort = $derived(projection.taskSort ?? DEFAULT_TASK_SORT);
   const taskGroup = $derived(projection.taskGroup ?? DEFAULT_TASK_GROUP);
   const searchQuery = $derived(search.query);
+  const searchFieldScope = $derived(search.fieldScope ?? "all");
+  const searchSort = $derived(search.sort ?? "relevance");
+  const searchFieldScopeLabel = $derived(`${toolbarStrings.search.fieldScopeLabel} · ${toolbarStrings.search.fieldScopes[searchFieldScope]}`);
+  const searchSortLabel = $derived(`${toolbarStrings.search.sortLabel} · ${toolbarStrings.search.sorts[searchSort]}`);
   const searchStatus = $derived(search.status);
   const searchFocusToken = $derived(search.focusToken);
   const searchIndexReadiness = $derived(search.readiness ?? "ready");
@@ -231,7 +239,12 @@
     // Close menus whose anchor or source is being replaced, including on unmount.
     compact; scope.sourceIdentity;
     const closeTaskPanels = taskMode;
-    return () => { if (closeTaskPanels) onToolbarAction?.({ action: "task-close-panels" }); moreMenu?.hide(); moreMenu = null; };
+    return () => {
+      if (closeTaskPanels) onToolbarAction?.({ action: "task-close-panels" });
+      moreMenu?.hide();
+      moreMenu = null;
+      searchMenu?.menu.hide();
+    };
   });
 
   const isBoxMode = $derived(activeBoxId !== null);
@@ -247,6 +260,7 @@
   let searchControlEl = $state<HTMLDivElement | null>(null);
   let searchToggleEl = $state<HTMLButtonElement | null>(null);
   let historySuggest = $state.raw<SearchHistorySuggestHandle | null>(null);
+  let searchMenu = $state.raw<{ kind: "fields" | "sort"; menu: Menu } | null>(null);
   let composing = false;
   const searchId = $props.id();
   const inputId = `${searchId}-input`;
@@ -605,6 +619,31 @@
     });
   }
 
+  function openSearchMenu<T extends string>(
+    event: MouseEvent, kind: "fields" | "sort", options: readonly T[],
+    labels: Record<T, string>, selected: T, onSelect?: (value: T) => void,
+  ): void {
+    const wasOpen = searchMenu?.kind === kind;
+    searchMenu?.menu.hide();
+    if (wasOpen) return;
+    historySuggest?.close();
+
+    const menu = new Menu().setUseNativeMenu(false);
+    searchMenu = { kind, menu };
+    menu.onHide(() => { if (searchMenu?.menu === menu) searchMenu = null; });
+    for (const value of options) {
+      menu.addItem((item) => item.setTitle(labels[value]).setChecked(value === selected).onClick(() => onSelect?.(value)));
+    }
+    const rect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
+    menu.showAtPosition({ x: rect.left, y: rect.bottom, overlap: true });
+  }
+
+  function openSearchSortMenu(event: MouseEvent): void {
+    const labels = toolbarStrings.search.sorts;
+    const options = Object.keys(labels) as SearchResultSort[];
+    openSearchMenu(event, "sort", options, labels, searchSort, onSearchSortChange);
+  }
+
   function emitToolbarAction(actionId: string): void {
     onToolbarAction?.({ action: actionId });
   }
@@ -613,6 +652,7 @@
     if (searchExpanded) {
       onSearchQueryReset?.({ source: "collapse" });
       composing = false;
+      searchMenu?.menu.hide();
       historySuggest?.close();
       searchExpanded = false;
     } else {
@@ -841,6 +881,30 @@
           value={searchQuery}
           oninput={handleSearchInput}
         />
+        {#if !taskMode}
+          <button
+            type="button"
+            class="clickable-icon fce-search-option"
+            class:is-selected={searchFieldScope === "title"}
+            aria-label={searchFieldScopeLabel}
+            aria-haspopup="menu"
+            aria-expanded={searchMenu?.kind === "fields"}
+            onclick={(event) => openSearchMenu(event, "fields", ["all", "title"], toolbarStrings.search.fieldScopes, searchFieldScope, onSearchFieldScopeChange)}
+            use:applyIcon={"heading"}
+            use:applyTooltip={searchFieldScopeLabel}
+          ></button>
+          <button
+            type="button"
+            class="clickable-icon fce-search-option"
+            class:is-selected={searchSort !== "relevance"}
+            aria-label={searchSortLabel}
+            aria-haspopup="menu"
+            aria-expanded={searchMenu?.kind === "sort"}
+            onclick={openSearchSortMenu}
+            use:applyIcon={"arrow-down-up"}
+            use:applyTooltip={searchSortLabel}
+          ></button>
+        {/if}
         {#if hasSearchQuery}
           <button
             type="button"

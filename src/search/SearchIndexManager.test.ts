@@ -1434,6 +1434,29 @@ describe("SearchIndexManager", () => {
     ] });
   });
 
+  it("matches and counts only titles in title search, including before restored documents are read", async () => {
+    const docs = [
+      createSearchableDocument("notes/a.md", "Meeting Notes", "meeting meeting notes"),
+      createSearchableDocument("notes/b.md", "Meeting", "notes"),
+      createSearchableDocument("notes/c.md", "Other", "meeting notes"),
+    ];
+    const paths = docs.map(({ path }) => path);
+    const store = createStoreMock({
+      outcome: "restored",
+      metadata: createMetadata({ documentCount: docs.length }),
+      payload: { serializedIndex: await createSerializedIndex(docs), documentCount: docs.length, lastIndexedAt: 111 },
+    });
+    const manager = new SearchIndexManager({ store, documentSource: createDocumentSource(docs).source });
+    await manager.restore(createMetadata());
+
+    expect(await manager.search("meeting notes", paths, "title")).toEqual({
+      orderedPaths: ["notes/a.md"],
+      matchCountsByPath: { "notes/a.md": 2 },
+      matchFieldsByPath: { "notes/a.md": ["title"] },
+    });
+    expect((await manager.search("meeting notes", paths)).orderedPaths).toHaveLength(3);
+  });
+
   it("preserves current MiniSearch tie ordering when identical documents score equally", async () => {
     const docs = [
       createSearchableDocument("Notes/A.md", "Equal", "shared token"),
@@ -2216,6 +2239,8 @@ describe("SearchIndexManager", () => {
 
     await manager.restore(createMetadata());
     const indexBeforeReconcile = indexOf(manager);
+    const snapshots = vi.fn();
+    manager.subscribe(snapshots);
     await manager.syncDocumentStateFromSource();
 
     // The read pass stays: match counts are computed from documentsByPath,
@@ -2226,6 +2251,7 @@ describe("SearchIndexManager", () => {
     expect(manager.getSnapshot().status).toBe("ready");
     expect(manager.getSnapshot().health.lastIndexedAt).toBe(111);
     expect(manager.getSnapshot().contentRevision).toBe(0);
+    expect(snapshots).toHaveBeenLastCalledWith(expect.objectContaining({ matchCountRevision: 1 }));
   });
 
   it("returns the same match counts after a fast-path reconcile as after a full reconcile", async () => {

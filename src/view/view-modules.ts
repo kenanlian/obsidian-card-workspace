@@ -204,7 +204,10 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost): V
     subscribeSearchSnapshots: (listener) => host.subscribeSearchSnapshots(listener),
     publishSearchProjection: () => host.publishSearch(),
     prepareSearchProjection: (query, result, revision, isCurrent) => {
-      const getCards = () => projection.previewSearchCards({ query, execution: result.execution, orderedPaths: result.orderedPaths ?? [] });
+      const getCards = () => projection.previewSearchCards({
+        query, execution: result.execution, orderedPaths: result.orderedPaths ?? [],
+        sort: search.getSort(), matchCountsByPath: result.matchCountsByPath,
+      });
       return hydration.prepareSearchProjection(getCards(),
         { query, revision, matchFieldsByPath: result.matchFieldsByPath ?? {}, isCurrent, getCards });
     },

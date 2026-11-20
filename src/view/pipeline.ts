@@ -70,7 +70,7 @@ export function runPipeline(
  * `(cards, context) => cards` step signature cannot carry.
  *
  * A non-empty query pauses grouping outright, regardless of search execution
- * state: search results are relevance-ordered, and bucketing them would fight
+ * state: search results have their own order, and bucketing them would fight
  * that ordering. The collapse set is left untouched while paused, so clearing
  * the query restores both grouping and collapse.
  */
@@ -160,11 +160,28 @@ export function applySearchFilter(cards: NoteCardRecord[], context: PipelineCont
     }
   }
 
-  return orderedMatches;
+  const { sort, matchCountsByPath } = context.search;
+  if (!sort || sort === "relevance") return orderedMatches;
+
+  const [field, direction] = sort.split("-");
+  const sortValue = (card: NoteCardRecord): number => {
+    if (field === "matches") return matchCountsByPath?.[card.path] ?? 0;
+    return field === "mtime" ? card.mtime : card.ctime;
+  };
+  const sign = direction === "asc" ? 1 : -1;
+  // Stable sort keeps relevance order for equal counts or timestamps.
+  return orderedMatches.sort((left, right) => sign * (sortValue(left) - sortValue(right)));
 }
 
 /** Pin reorder step — reorder cards to put pinned paths first while preserving relative order. */
-export function applyPinReorder(cards: NoteCardRecord[], context: PipelineContext): NoteCardRecord[] {
+export function applyPinReorder(
+  cards: NoteCardRecord[],
+  context: Pick<PipelineContext, "pinnedPaths"> & { search?: PipelineSearchInput },
+): NoteCardRecord[] {
+  const { search } = context;
+  if (search?.sort && search.sort !== "relevance" && search.query.trim()) {
+    return cards;
+  }
   // Guard: empty cards
   if (cards.length === 0) {
     return cards;

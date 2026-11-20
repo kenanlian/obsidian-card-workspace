@@ -148,6 +148,8 @@
     onIncludeSubfoldersChange?: (payload: IncludeSubfoldersChangePayload) => void;
     onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
     onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
+    onSearchFieldScopeChange?: (fieldScope: import("./types").SearchFieldScope) => void;
+    onSearchSortChange?: (sort: import("./types").SearchResultSort) => void;
     onSearchHistoryCommand?: (payload: import("./types").SearchHistoryCommand) => void;
     onSelectFolder?: (payload: SelectFolderPayload) => void;
     onFolderAction?: (payload: FolderActionPayload) => void;
@@ -263,6 +265,8 @@
     onIncludeSubfoldersChange,
     onSearchQueryChange,
     onSearchQueryReset,
+    onSearchFieldScopeChange,
+    onSearchSortChange,
     onSearchHistoryCommand,
     onSelectFolder,
     onFolderAction,
@@ -1079,6 +1083,8 @@
     {onTaskGroupChange}
     onSearchQueryChange={handleSearchQueryChange}
     onSearchQueryReset={handleSearchQueryReset}
+    {onSearchFieldScopeChange}
+    {onSearchSortChange}
     {onSearchHistoryCommand}
     onBoxCommand={handleBoxCommand}
   />

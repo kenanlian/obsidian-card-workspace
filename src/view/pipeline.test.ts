@@ -5,7 +5,7 @@ import type { PipelineContext } from "./pipeline";
 import type { GroupBucket } from "./card-grouping";
 import type { GroupSpec } from "../card-grouping-settings";
 import { DEFAULT_GROUP_SPEC } from "../card-grouping-settings";
-import type { NoteCardRecord } from "./types";
+import type { NoteCardRecord, SearchResultSort } from "./types";
 import type { CardFileKind } from "./file-kind";
 import { PHASE3_MINISEARCH_CONTRACT } from "../search/types";
 import type { PropertyScalarRef } from "../property-filter-settings";
@@ -546,6 +546,31 @@ describe("applyPropertyFilter behavior", () => {
 // ---------------------------------------------------------------------------
 
 describe("apply search filter behavior", () => {
+  it.each<[SearchResultSort, string[]]>([
+    ["relevance", ["a.md", "b.md", "c.md"]],
+    ["matches-desc", ["b.md", "c.md", "a.md"]],
+    ["matches-asc", ["a.md", "b.md", "c.md"]],
+    ["mtime-desc", ["a.md", "c.md", "b.md"]],
+    ["mtime-asc", ["b.md", "c.md", "a.md"]],
+    ["ctime-desc", ["b.md", "c.md", "a.md"]],
+    ["ctime-asc", ["a.md", "c.md", "b.md"]],
+  ])("orders the indexed matches by %s", (sort, paths) => {
+    const cards = [
+      { ...createMockCard("a.md"), mtime: 30, ctime: 10 },
+      { ...createMockCard("b.md"), mtime: 10, ctime: 30 },
+      { ...createMockCard("c.md"), mtime: 20, ctime: 20 },
+      createMockCard("unmatched.md"),
+    ];
+    const context = withPinnedPaths(createMockContext(), ["a.md", "unmatched.md"]);
+    context.search = {
+      query: "needle", execution: "indexed-ready", sort,
+      orderedPaths: ["b.md", "a.md", "c.md", "out-of-scope.md"],
+      matchCountsByPath: { "a.md": 1, "b.md": 2, "c.md": 2 },
+    };
+
+    expect(runPipeline(cards, folderSteps(), context).cards.map(card => card.path)).toEqual(paths);
+  });
+
   it("returns all cards when query is empty", () => {
     const cards = [createMockCard("alpha.md"), createMockCard("beta.md")];
     const context = createMockContext();

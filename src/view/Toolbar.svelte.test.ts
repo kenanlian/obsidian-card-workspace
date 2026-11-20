@@ -13,7 +13,8 @@ import { getUiStrings } from "../i18n";
 import { buildBrowseFilterChips } from "./browse-filters";
 import { resolveSourceCapabilities } from "./source-capabilities";
 import { createBoxScope, createFolderScope } from "./scope";
-import type { ToolbarActionPayload } from "./types";
+import type { SearchResultSort, ToolbarActionPayload } from "./types";
+import type { SearchFieldScope } from "../search";
 
 interface SortChangePayload {
   field: string;
@@ -59,6 +60,8 @@ interface ToolbarCallbacks {
   onGroupCollapseCommand?: (payload: GroupCollapseCommandPayload) => void;
   onSearchQueryChange?: (payload: SearchQueryChangePayload) => void;
   onSearchQueryReset?: (payload: SearchQueryResetPayload) => void;
+  onSearchFieldScopeChange?: (scope: SearchFieldScope) => void;
+  onSearchSortChange?: (sort: SearchResultSort) => void;
   onToolbarAction?: (payload: ToolbarActionPayload) => void;
   onBoxCommand?: (payload: BoxCommandPayload) => void;
   onViewModeChange?: (payload: { mode: string }) => void;
@@ -827,6 +830,33 @@ describe("Toolbar.svelte", () => {
     expect(captured.searchQueryResetEvents).toEqual([{ source: "clear-button" }]);
     expect(captured.searchQueryChangeEvents).toEqual([]);
 
+    await disposeMountedComponent(component);
+  });
+
+  it("places search field and sort menus between the input and clear button", async () => {
+    const onSearchFieldScopeChange = vi.fn();
+    const onSearchSortChange = vi.fn();
+    const { component, target } = mountToolbar({ searchQuery: "needle", searchFocusToken: 1 }, {
+      onSearchFieldScopeChange, onSearchSortChange,
+    });
+    await tick();
+    const buttons = Array.from(target.querySelectorAll<HTMLButtonElement>(".fce-toolbar-search button"));
+    expect(buttons.map(button => button.getAttribute("aria-label"))).toEqual([
+      "Search fields · Title and body", "Search result order · Relevance", "Clear search query",
+    ]);
+
+    buttons[0].click();
+    const fieldsMenu = getObsidianMenuInstances().at(-1)!;
+    expect(fieldsMenu.items.map(itemTitle)).toEqual(["Title and body", "Title only"]);
+    clickMenuItem(fieldsMenu, "Title only");
+    expect(onSearchFieldScopeChange).toHaveBeenCalledWith("title");
+
+    buttons[1].click();
+    const sortMenu = getObsidianMenuInstances().at(-1)!;
+    expect(sortMenu.items.map(itemTitle)).toEqual(Object.values(getUiStrings("en").toolbar.search.sorts));
+    expect(findMenuItem(sortMenu, "Relevance")?.checked).toBe(true);
+    clickMenuItem(sortMenu, "Created time (oldest first)");
+    expect(onSearchSortChange).toHaveBeenCalledWith("ctime-asc");
     await disposeMountedComponent(component);
   });
 

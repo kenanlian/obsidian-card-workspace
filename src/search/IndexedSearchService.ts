@@ -1,5 +1,6 @@
 import type { SearchIndexManagerSearchResult } from "./SearchIndexManager";
 import type {
+  SearchFieldScope,
   SearchQueryExecutionState,
   SearchQueryRequest,
   SearchQueryResult,
@@ -13,7 +14,7 @@ export interface IndexedSearchManagerAdapter {
   dispose(): void;
   getSnapshot(): SearchServiceSnapshot;
   subscribe(listener: (snapshot: SearchServiceSnapshot) => void): () => void;
-  search(query: string, candidatePaths: string[]): Promise<SearchIndexManagerSearchResult>;
+  search(query: string, candidatePaths: string[], fieldScope?: SearchFieldScope): Promise<SearchIndexManagerSearchResult>;
   handleVaultMutation(event: SearchVaultMutation): void;
 }
 
@@ -105,7 +106,9 @@ export class IndexedSearchService implements SearchService {
       };
     }
 
-    const searchResult = await this.manager.search(request.query, boundedCandidates);
+    const searchResult = request.fieldScope === "title"
+      ? await this.manager.search(request.query, boundedCandidates, "title")
+      : await this.manager.search(request.query, boundedCandidates);
     if (this.disposed) {
       return { mode: "indexed", status: this.snapshot.status, execution: "indexed-unavailable" };
     }

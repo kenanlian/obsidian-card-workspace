@@ -885,10 +885,11 @@
   color: var(--fce-text-muted);
 }
 
-.folder-card-view .fce-search-clear {
+.folder-card-view :is(.fce-search-option, .fce-search-clear) {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
   width: 24px;
   height: 24px;
   margin-right: 3px;
@@ -899,9 +900,13 @@
   cursor: pointer;
 }
 
-.folder-card-view .fce-search-clear:hover {
+.folder-card-view :is(.fce-search-option, .fce-search-clear):hover {
   color: var(--fce-text);
   background: var(--background-modifier-hover);
+}
+
+.folder-card-view .fce-search-option.is-selected {
+  color: var(--fce-accent);
 }
 
 /* Native page previews opened by cards are attached to the window body. */

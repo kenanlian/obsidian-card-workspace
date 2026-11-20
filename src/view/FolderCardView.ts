@@ -783,6 +783,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     return {
       history: this.plugin.getSettings().searchHistory,
       query: this.modules.search.getQuery(), committedQuery: this.modules.search.getCommittedQuery(),
+      fieldScope: this.modules.search.getFieldScope(), sort: this.modules.search.getSort(),
       status: this.modules.search.getStatus(),
       readiness: this.modules.search.getSnapshot()?.health?.readiness,
       persistence: this.modules.search.getSnapshot()?.health?.persistence,

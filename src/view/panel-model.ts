@@ -190,6 +190,8 @@ export interface PanelSearchState {
   query: string;
   /** Query represented by the currently published cards and highlights. */
   committedQuery: string;
+  fieldScope?: import("../search").SearchFieldScope;
+  sort?: import("./types").SearchResultSort;
   status: SearchStatus;
   readiness?: SearchIndexReadinessState;
   persistence?: SearchIndexPersistenceHealth;

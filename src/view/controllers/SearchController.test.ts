@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_GROUP_SPEC } from "../../card-grouping-settings";
-import type { SearchIndexHealthSnapshot, SearchService, SearchServiceSnapshot } from "../../search";
+import type { SearchIndexHealthSnapshot, SearchQueryResult, SearchService, SearchServiceSnapshot } from "../../search";
 import { DEFAULT_SETTINGS, normalizeSettings, mergeSettings } from "../../settings";
 import { ProjectionController } from "./ProjectionController";
 import { createFolderScope } from "../scope";
@@ -69,6 +69,44 @@ function asService(query: SearchService["query"]): SearchService {
 describe("SearchController", () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("drops a pending full-text query when switching to titles and sorts the committed results without querying", async () => {
+    vi.useFakeTimers();
+    const context = createContext();
+    const titleResult: SearchQueryResult = {
+      mode: "indexed", status: "ready", execution: "indexed-ready",
+      orderedPaths: ["notes/title.md"], matchCountsByPath: { "notes/title.md": 1 },
+    };
+    let resolveFullText!: (result: SearchQueryResult) => void;
+    const pendingFullText = new Promise<SearchQueryResult>(resolve => { resolveFullText = resolve; });
+    const query = vi.fn<SearchService["query"]>()
+      .mockReturnValueOnce(pendingFullText)
+      .mockResolvedValueOnce(titleResult);
+    const publishSearchProjection = vi.fn();
+    const controller = new SearchController({
+      context,
+      getSearchService: () => asService(query),
+      getSearchSnapshot: () => createSnapshot(),
+      subscribeSearchSnapshots: () => () => undefined,
+      publishSearchProjection,
+    });
+    controller.initializeSnapshotState();
+    controller.onQueryChange({ query: "needle" });
+    vi.advanceTimersByTime(120);
+
+    controller.onFieldScopeChange("title");
+    expect(query).toHaveBeenLastCalledWith({ query: "needle", candidatePaths: [], fieldScope: "title" });
+    await Promise.resolve();
+    resolveFullText({ ...titleResult, orderedPaths: ["notes/body.md"] });
+    await Promise.resolve();
+
+    controller.onSortChange("matches-asc");
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(publishSearchProjection).toHaveBeenCalledTimes(2);
+    expect(controller.buildPipelineSearchInput()).toMatchObject({
+      orderedPaths: ["notes/title.md"], sort: "matches-asc", matchCountsByPath: { "notes/title.md": 1 },
+    });
   });
 
   it("waits exactly 120ms before querying", async () => {

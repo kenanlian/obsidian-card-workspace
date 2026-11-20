@@ -1,5 +1,6 @@
 import type { PanelModel } from "./panel-model";
-import type { ToolbarActionPayload } from "./types";
+import type { SearchResultSort, ToolbarActionPayload } from "./types";
+import type { SearchFieldScope } from "../search";
 import type { HydrateViewportRequest } from "./hydration-request";
 import type { CardFileDragStarter, CardFileDragStartPayload, SearchHistoryCommand, SearchQueryResetSource, CardHoverLinkPayload, FolderActionPayload, NavContextMenuPayload } from "./types";
 import type { ViewModules } from "./view-modules";
@@ -174,6 +175,12 @@ export function buildPanelProps(view: PanelHost): PanelCallbackProps {
     },
     onSearchQueryReset: (detail: { source: SearchQueryResetSource }) => {
       view.modules.search.resetQuery(detail.source);
+    },
+    onSearchFieldScopeChange: (fieldScope: SearchFieldScope) => {
+      view.modules.search.onFieldScopeChange(fieldScope);
+    },
+    onSearchSortChange: (sort: SearchResultSort) => {
+      view.modules.search.onSortChange(sort);
     },
     onSearchHistoryCommand: (detail: SearchHistoryCommand) => {
       view.modules.search.onHistoryCommand(detail);

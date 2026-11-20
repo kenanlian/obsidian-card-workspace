@@ -1,11 +1,10 @@
 import { getSearchDisplayTerms } from "../search-tokenization";
 import { countNonOverlappingLiteralOccurrences } from "./SearchReconciliationRunner";
-import type { SearchableDocument } from "./types";
 
 export function buildMatchCountsByPath(
   query: string,
   orderedPaths: readonly string[],
-  documentsByPath: ReadonlyMap<string, SearchableDocument>,
+  getSearchText: (path: string) => string | undefined,
 ): Record<string, number> | undefined {
   const uniqueTokens = getSearchDisplayTerms(query);
   if (uniqueTokens.length === 0) {
@@ -14,13 +13,9 @@ export function buildMatchCountsByPath(
 
   const matchCountsByPath: Record<string, number> = {};
   for (const path of orderedPaths) {
-    const document = documentsByPath.get(path);
-    if (!document) {
-      continue;
-    }
-
-    const searchBasis = `${document.title} ${document.content}`.trim();
-    const count = countTokenMatches(searchBasis, uniqueTokens);
+    const searchText = getSearchText(path);
+    if (searchText === undefined) continue;
+    const count = countTokenMatches(searchText, uniqueTokens);
     if (count > 0) {
       matchCountsByPath[path] = count;
     }

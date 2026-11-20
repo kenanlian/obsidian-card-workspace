@@ -1,4 +1,5 @@
 import type {
+  SearchFieldScope,
   SearchQueryExecutionState,
   SearchQueryResult,
   SearchMatchField,
@@ -8,7 +9,7 @@ import type {
 import { deleteSearchHistory, recordSearchHistory } from "../../search-history";
 import { AsyncEpoch, type EpochToken } from "../async-epoch";
 import { scopesEqual, type CardScope } from "../scope";
-import type { PipelineSearchInput, SearchStatus, SearchHistoryCommand, SearchQueryResetSource } from "../types";
+import type { PipelineSearchInput, SearchStatus, SearchHistoryCommand, SearchQueryResetSource, SearchResultSort } from "../types";
 import type { DisposableController, DisposeReport, ViewContext } from "../view-context";
 
 const SEARCH_DEBOUNCE_MS = 120;
@@ -49,6 +50,9 @@ export interface SearchRefreshOptions {
 /** Owns one view's indexed-search runtime, including both stale-result guards. */
 export class SearchController implements DisposableController {
   private query = "";
+  private fieldScope: SearchFieldScope = "all";
+  private committedFieldScope: SearchFieldScope = "all";
+  private sort: SearchResultSort = "relevance";
   private inputRevision = 0;
   private endedInputRevision = 0;
   /** Query represented by `execution` / `orderedPaths` and the visible-card projection. */
@@ -123,8 +127,13 @@ export class SearchController implements DisposableController {
     return this.committedQuery;
   }
 
+  getFieldScope(): SearchFieldScope { return this.fieldScope; }
+  getSort(): SearchResultSort { return this.sort; }
   getContentRevision(): number { return this.contentRevision; }
-  isCommittedQueryCurrent(): boolean { return this.query.trim() === this.committedQuery.trim(); }
+  isCommittedQueryCurrent(): boolean {
+    return this.query.trim() === this.committedQuery
+      && (!this.committedQuery || this.fieldScope === this.committedFieldScope);
+  }
   getMatchFields(path: string): readonly SearchMatchField[] | undefined { return this.matchFieldsByPath[path]; }
 
   private invalidateSearchPreviews(advanceContent: boolean = false): void {
@@ -141,10 +150,10 @@ export class SearchController implements DisposableController {
 
   private setCommittedQuery(query: string): void {
     query = query.trim();
-    if (this.committedQuery !== query) {
-      this.committedQuery = query;
-      this.invalidateSearchPreviews();
-    }
+    const changed = this.committedQuery !== query || (query !== "" && this.committedFieldScope !== this.fieldScope);
+    this.committedQuery = query;
+    this.committedFieldScope = this.fieldScope;
+    if (changed) this.invalidateSearchPreviews();
   }
 
   getStatus(): SearchStatus {
@@ -177,6 +186,7 @@ export class SearchController implements DisposableController {
       query: this.committedQuery,
       execution: this.execution,
       orderedPaths: this.orderedPaths ?? [],
+      ...(this.sort !== "relevance" ? { sort: this.sort, matchCountsByPath: this.matchCountsByPath } : {}),
     };
   }
 
@@ -204,7 +214,8 @@ export class SearchController implements DisposableController {
     const ready = this.isIndexReady();
     const wasReady = previous?.initialized && !previous.disposed && previous.mode === "indexed" && previous.status === "ready";
     const sameIndex = previous?.indexGeneration === snapshot?.indexGeneration;
-    const sameContent = previous?.contentRevision === snapshot?.contentRevision;
+    const sameContent = previous?.contentRevision === snapshot?.contentRevision
+      && previous?.matchCountRevision === snapshot?.matchCountRevision;
     if (ready && wasReady && sameIndex && sameContent) {
       this.status = this.deriveStatus();
       if (publish) this.context.publishGroups("search");
@@ -213,7 +224,7 @@ export class SearchController implements DisposableController {
     this.snapshotEpoch.bump();
     this.requestEpoch.bump();
     if (ready && wasReady && sameIndex) {
-      // Incremental content updates requery while retaining unaffected previews.
+      // Incremental updates and newly available counts retain unaffected previews.
       this.status = this.deriveStatus();
       if (publish) this.context.publishGroups("search");
     } else {
@@ -231,6 +242,25 @@ export class SearchController implements DisposableController {
   private clearSnapshotSubscription(): void {
     this.snapshotUnsubscribe?.();
     this.snapshotUnsubscribe = null;
+  }
+
+  onFieldScopeChange(fieldScope: SearchFieldScope): void {
+    if (fieldScope === this.fieldScope || this.isTaskMode()) return;
+    this.fieldScope = fieldScope;
+    this.clearDebounce();
+    this.requestEpoch.bump();
+    this.context.publishGroups("search");
+    void this.refreshProjection();
+  }
+
+  onSortChange(sort: SearchResultSort): void {
+    if (sort === this.sort || this.isTaskMode()) return;
+    this.sort = sort;
+    if (this.scopeSettled() && this.committedQuery && this.execution === "indexed-ready") {
+      this.deps.publishSearchProjection();
+    } else {
+      this.context.publishGroups("search");
+    }
   }
 
   onQueryChange(detail: { query?: unknown }): void {
@@ -382,6 +412,7 @@ export class SearchController implements DisposableController {
       const result = await service.query({
         query,
         candidatePaths: this.context.store.getBaseCards().map((card) => card.path),
+        ...(this.fieldScope === "title" ? { fieldScope: this.fieldScope } : {}),
       });
 
       if (!this.isRequestCurrent(requestToken, loadToken, requestScope, snapshotToken, query)) {
@@ -554,6 +585,9 @@ export class SearchController implements DisposableController {
     this.snapshot = null;
     this.query = "";
     this.committedQuery = "";
+    this.fieldScope = "all";
+    this.committedFieldScope = "all";
+    this.sort = "relevance";
     this.execution = "indexed-unavailable";
     this.orderedPaths = undefined;
     this.clearMatchCounts();
