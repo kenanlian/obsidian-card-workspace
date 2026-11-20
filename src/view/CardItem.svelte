@@ -102,9 +102,10 @@
   const cardCornerRadius = $derived(appearance.cardCornerRadius);
   const previewLines = $derived(appearance.previewLines);
   const searchPreviewSnippetCount = $derived(appearance.searchPreviewSnippetCount);
-  const diagram = $derived((card.fileKind === "canvas" || card.fileKind === "excalidraw") && !card.linkPreview);
+  const normalizedSearchQuery = $derived(searchQuery.trim());
+  const diagram = $derived(!normalizedSearchQuery && (card.fileKind === "canvas" || card.fileKind === "excalidraw") && !card.linkPreview);
   const imageMode = $derived(diagram ? "inline" : previewLines > 0 ? appearance.cardImageMode ?? "off" : "off");
-  const showImage = $derived(diagram || (imageMode !== "off" && image !== undefined));
+  const showImage = $derived(!normalizedSearchQuery && (diagram || (imageMode !== "off" && image !== undefined)));
   const missingExport = $derived(diagram && card.fileKind === "excalidraw"
     && image?.status === "diagram" && image.reason === "missing");
   const diagramMessage = $derived(image?.status === "diagram"
@@ -119,7 +120,6 @@
   const fileExtension = $derived(card.file.extension || "");
   const attachment = $derived(["image", "pdf", "audio", "video", "file"].includes(card.fileKind));
   const highlightedTitleSegments = $derived(getHighlightedTitleSegments(card.title, searchQuery));
-  const normalizedSearchQuery = $derived(searchQuery.trim());
   const linkPreview = $derived(card.linkPreview);
   const searchPreview = $derived(card.searchPreview?.query === normalizedSearchQuery
     && card.searchPreview.previewLines === previewLines

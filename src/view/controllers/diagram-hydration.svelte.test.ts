@@ -138,11 +138,21 @@ describe("diagram scheduling and lifecycle", () => {
     h.hydration.clearPreviewCache(); expect(h.store.getBaseCard(h.records[0].path)?.hydrated).toBe(true);
     await h.hydration.requestDiagramPreview(h.records[0].path); expect(h.read).toHaveBeenCalledTimes(2); h.dispose();
   });
-  it("reuses exports during title search and preserves the existing links scope preview", async () => {
-    const h = harness(); h.add("notes/a.svg"); await h.hydration.requestDiagramPreview(h.records[0].path);
-    h.setQuery("a"); await h.viewport(); await h.hydration.requestDiagramPreview(h.records[0].path);
-    expect(h.read).toHaveBeenCalledTimes(1); expect(h.store.getBaseCard(h.records[0].path)?.searchPreview?.status).toBe("title-only");
+  it("skips diagram reads during title search and reuses exports on returning to browsing", async () => {
+    const h = harness(); h.add("notes/a.svg");
+    const path = h.records[0].path;
+    h.setQuery("a"); await h.viewport();
+    expect(await h.hydration.requestDiagramPreview(path)).toBeUndefined();
+    expect(h.read).not.toHaveBeenCalled();
+    expect(h.store.getBaseCard(path)?.searchPreview?.status).toBe("title-only");
+    h.setQuery("");
+    expect(await h.hydration.requestDiagramPreview(path)).toMatchObject({ status: "ready" });
+    h.setQuery("a");
+    expect(await h.hydration.requestDiagramPreview(path)).toBeUndefined();
+    h.setQuery("");
+    expect(await h.hydration.requestDiagramPreview(path)).toMatchObject({ status: "ready" });
+    expect(h.read).toHaveBeenCalledTimes(1);
     h.store.setScope(createLinksScope("notes/source.md", "backlinks"));
-    expect(await h.hydration.requestDiagramPreview(h.records[0].path)).toBeUndefined(); h.dispose();
+    expect(await h.hydration.requestDiagramPreview(path)).toBeUndefined(); h.dispose();
   });
 });

@@ -298,6 +298,7 @@
   const scope = $derived(panelState.scope);
   const cards = $derived(panelState.cards);
   const search = $derived(panelState.search);
+  const searchActive = $derived(search.committedQuery.trim().length > 0);
   const projection = $derived(panelState.projection);
   const bulk = $derived(panelState.bulk);
   const nav = $derived(panelState.nav);
@@ -310,7 +311,7 @@
   const taskRecords = $derived(cards.taskRecords ?? []);
   const rowSource = $derived<readonly (NoteCardRecord | TaskCardRecord)[]>(taskMode ? taskRecords : cardRecords);
   const taskBuilding = $derived(taskMode && (cards.taskStatus === "building" || (cards.loading && taskRecords.length === 0)));
-  const taskFiltered = $derived((projection.taskFilters?.status ?? "all") !== "all" || projection.taskFilters?.date != null || search.committedQuery.trim().length > 0 || (scope.browseFilterState?.items.length ?? 0) > 0);
+  const taskFiltered = $derived((projection.taskFilters?.status ?? "all") !== "all" || projection.taskFilters?.date != null || searchActive || (scope.browseFilterState?.items.length ?? 0) > 0);
   const pendingTaskIds = $derived<ReadonlySet<string>>(new Set(cards.pendingTaskIds ?? []));
   // Recomputed on every cards publish; the day-rollover refresh republishes cards.
   const todayIso = $derived.by(() => {
@@ -524,8 +525,8 @@
     // Task rows have no preview images; card requests resume on the way back.
     if (taskMode) { lastImageRequestIdentity = null; return; }
     const mode = appearance.previewLines > 0 ? appearance.cardImageMode ?? "off" : "off";
-    if (!viewportActive) {
-      const identity = `hidden:${cards.generation}:${cards.sequenceRevision}:${images.requestVersion}`;
+    if (!viewportActive || searchActive) {
+      const identity = `empty:${cards.generation}:${cards.sequenceRevision}:${images.requestVersion}`;
       if (identity !== lastImageRequestIdentity) {
         lastImageRequestIdentity = identity;
         onImageViewport?.({ generation: cards.generation, sequenceRevision: cards.sequenceRevision,
@@ -843,6 +844,7 @@
   }
 
   function getCardImage(path: string): CardImageState | undefined {
+    if (searchActive) return undefined;
     const committed = cards.loading || images.generation === undefined || images.generation === cards.generation;
     return (committed ? images.byPath[path] : undefined)
       ?? (cards.loading ? undefined : resolveImagePlaceholder?.(path, cards.generation));

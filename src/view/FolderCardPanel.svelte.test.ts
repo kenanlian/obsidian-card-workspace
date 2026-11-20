@@ -638,6 +638,50 @@ describe("FolderCardPanel.svelte", () => {
     await unmount(component);
   });
 
+  it.each(["right", "inline"] as const)("uses the full card for search context in %s image mode", async (cardImageMode) => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const state = createInitialPanelState();
+    const note = createCard("notes/note.md", "Note");
+    const diagram = { ...createCard("notes/needle.canvas", "needle"), fileKind: "canvas" as const };
+    state.cards.records = [note, diagram];
+    state.appearance = { ...state.appearance, cardImageMode };
+    state.images = { byPath: { [note.path]: { status: "ready", url: "blob:thumbnail" } }, requestVersion: 0 };
+    const onImageViewport = vi.fn();
+    const resolveImagePlaceholder = vi.fn(() => ({ status: "loading" as const }));
+    const panelModel = createPanelModel(state);
+    const component = mount(FolderCardPanel, { target, props: { panelModel, onImageViewport, resolveImagePlaceholder } });
+    await tick();
+    expect(target.querySelectorAll(".fce-card-image")).toHaveLength(2);
+    panelModel.mutate((draft) => { draft.search = { ...draft.search, query: "needle" }; });
+    await tick();
+    expect(target.querySelectorAll(".fce-card-image")).toHaveLength(2);
+
+    resolveImagePlaceholder.mockClear();
+    panelModel.mutate((draft) => {
+      draft.search = { ...draft.search, committedQuery: "needle" };
+      draft.cards = { ...draft.cards, records: [{ ...note, searchPreview: {
+        query: "needle", revision: 1, mtime: note.mtime, previewLines: 5, snippetLimit: 2, status: "hits",
+        snippets: [{
+          id: "match", text: "A needle in context", highlights: [{ start: 2, end: 8 }],
+          location: { from: { line: 0, ch: 2 }, to: { line: 0, ch: 8 }, offset: 2, text: "needle", before: "A ", after: " in context" },
+        }],
+      } }, diagram] };
+    });
+    await tick();
+    expect(target.querySelector(".fce-card-image, .has-right-image")).toBeNull();
+    expect(target.querySelector(".fce-search-snippet mark")?.textContent).toBe("needle");
+    expect(resolveImagePlaceholder).not.toHaveBeenCalled();
+    expect(onImageViewport).toHaveBeenLastCalledWith(expect.objectContaining({ paths: [] }));
+
+    panelModel.mutate((draft) => { draft.search = { ...draft.search, committedQuery: "", query: "" }; });
+    await tick();
+    expect(target.querySelectorAll(".fce-card-image")).toHaveLength(2);
+    expect(onImageViewport).toHaveBeenLastCalledWith(expect.objectContaining({ paths: [note.path, diagram.path] }));
+    await unmount(component);
+  });
+
   it("reserves images in mounted overscan before demand and reuses the region on completion", async () => {
     const target = document.createElement("div"); document.body.appendChild(target);
     const state = createInitialPanelState();

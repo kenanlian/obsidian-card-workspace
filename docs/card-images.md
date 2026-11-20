@@ -4,6 +4,10 @@ Since 1.3.4, **Card images** defaults to **Right thumbnail** (88 × 88 CSS pixel
 
 从 1.3.4 起，**卡片图片**默认使用**右侧缩略图**（88 × 88 CSS 像素），**图片显示方式**默认为**裁切铺满**。可在 Obsidian **设置 → Card Workspace → 卡片图片**中切换为**标题下方内联图片**（固定高度 160 CSS 像素）或**关闭**；在**图片显示方式**中选择**完整显示**，可在相同区域内展示整张图片。没有受支持本地图片引用的笔记保留普通文字布局；多列仍按行排列，卡片保持各自高度。
 
+Search result cards hide image previews and their placeholders, giving matching snippets the full card width. Clearing the search restores the configured previews.
+
+搜索结果卡片隐藏图片预览及其占位，让匹配片段使用卡片的完整宽度。清空搜索后恢复按设置显示图片预览。
+
 The plugin uses Obsidian's cached body embeds to find the first resolvable local AVIF, BMP, GIF, JPEG, PNG, SVG, or WebP image, including Wiki embeds and Markdown images. Attachments may live outside the folder being browsed. Missing and unsupported references are skipped. Remote images, frontmatter cover fields, HTML images, and embedded notes are excluded. Animated images use their static first frame; standalone image cards use the same display settings and cache. A selected image that fails generation does not cause another attachment to be read.
 
 插件通过 Obsidian 的正文嵌入缓存寻找第一张可解析的本地 AVIF、BMP、GIF、JPEG、PNG、SVG 或 WebP，支持 Wiki 嵌入和 Markdown 图片，附件可以位于当前文件夹之外。缺失或不支持的引用会被跳过。远程图片、frontmatter 封面字段、HTML 图片和嵌入笔记不显示。动图使用静态首帧；独立图片卡片沿用相同的显示设置和缓存。已选中图片生成失败时，不继续读取其他附件。

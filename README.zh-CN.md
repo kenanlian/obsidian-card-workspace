@@ -103,7 +103,7 @@ Card Workspace 会恢复上次浏览的**文件夹**；如果是库根目录，�
 - **打开位置。** 从 ribbon 图标或命令面板打开，桌面端位于左侧边栏，移动端同样位于左侧边栏。
 - **桌面快速输入。** 需要在 Obsidian“外观”设置中使用“Obsidian 窗口边框”或“隐藏窗口边框”，修改后完整重启。草稿只保存在内存中，不跨重启保留。平台能力要求和验收情况见[快速输入说明](docs/note-input.md)。
 - **Obsidian 版本要求。** 需要 Obsidian 1.11.4 或更高版本。1.13 及以上使用原生确认弹窗、声明式设置并接入设置搜索；1.11.4–1.12 使用兼容弹窗和共用定义的旧版设置渲染入口。实际行为和兼容性以 `manifest.json` 为准。更早的 Obsidian 版本会继续收到最后一个兼容的发行版（1.3.4）。
-- **受支持的文件。** Markdown（`.md`）卡片有完整预览和全文索引。Bases（`.base`）使用标题和占位内容。Canvas（`.canvas`）显示包含节点、连线和标签的缩略图；Excalidraw（`.excalidraw` 与 `.excalidraw.md`）显示同目录导出的 SVG，请安装 Excalidraw 插件并开启 SVG 自动导出。这三类文件仍只按标题搜索。两类图形始终内联并完整显示，不受卡片图片设置控制。图片文件可显示缩略图，PDF、音频、视频和其他文件显示类型及文件信息，不提供正文预览或播放器。导航文件夹右键菜单支持新建 Excalidraw 文件。详见[文件类型](docs/file-types.md)和[图形预览限制与导出命名](docs/diagram-previews.md)。
+- **受支持的文件。** Markdown（`.md`）卡片有完整预览和全文索引。Bases（`.base`）使用标题和占位内容。Canvas（`.canvas`）显示包含节点、连线和标签的缩略图；Excalidraw（`.excalidraw` 与 `.excalidraw.md`）显示同目录导出的 SVG，请安装 Excalidraw 插件并开启 SVG 自动导出。这三类文件仍只按标题搜索。浏览文件夹或盒子时，两类图形内联并完整显示，不受卡片图片设置控制。搜索结果隐藏图片和图形预览。图片文件可显示缩略图，PDF、音频、视频和其他文件显示类型及文件信息，不提供正文预览或播放器。导航文件夹右键菜单支持新建 Excalidraw 文件。详见[文件类型](docs/file-types.md)和[图形预览限制与导出命名](docs/diagram-previews.md)。
 
 ## 隐私
 

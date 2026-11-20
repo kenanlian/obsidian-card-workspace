@@ -396,13 +396,13 @@ export class HydrationController implements DisposableController {
   }
   async requestDiagramPreview(path: string): Promise<DiagramPreviewResult | undefined> {
     const card = this.context.store.getBaseCard(path);
-    if (!card || !isDiagramKind(card.fileKind) || this.context.store.getScope().kind === "links" || this.disposed) return undefined;
+    if (!card || this.disposed || !this.wantsDiagram(card)) return undefined;
     const fingerprint = this.diagramFingerprintFor(card);
     const generation = this.context.epochs.load.value, revision = this.context.store.getHydrationRevision();
     const cached = this.cache.get(fingerprint)?.diagramPreview;
     if (cached) return cached;
     await this.requestPath(path, 0, { forced: true, foreground: true });
-    if (this.disposed || generation !== this.context.epochs.load.value || revision !== this.context.store.getHydrationRevision()
+    if (this.disposed || !this.wantsDiagram(card) || generation !== this.context.epochs.load.value || revision !== this.context.store.getHydrationRevision()
       || !fingerprintsEqual(fingerprint, this.diagramFingerprintFor(card))) return undefined;
     return this.cache.get(fingerprint)?.diagramPreview;
   }
@@ -931,7 +931,7 @@ export class HydrationController implements DisposableController {
     pending.forEach((item) => item.resolve());
   }
   private wantsDiagram(card: NoteCardRecord): boolean {
-    return isDiagramKind(card.fileKind) && this.context.store.getScope().kind !== "links";
+    return isDiagramKind(card.fileKind) && this.context.store.getScope().kind !== "links" && !this.deps.getCommittedQuery?.().trim();
   }
   private ordinaryFingerprintFor(card: NoteCardRecord, fingerprint: PreviewFingerprint): PreviewFingerprint {
     return createPreviewFingerprint(card.path, card.mtime, fingerprint.previewLines, fingerprint.maxVisibleChars,
@@ -949,7 +949,7 @@ export class HydrationController implements DisposableController {
       card.mtime,
       this.context.getSettings().previewLines,
       DEFAULT_PREVIEW_MAX_VISIBLE_CHARS,
-      `${isDiagramKind(card.fileKind) ? `source:${this.getDiagramFingerprint(card.path)}|` : ""}${query ? `search:${preparation?.revision ?? this.deps.getSearchContentRevision?.() ?? 0}:${query}:snippets:${this.context.getSettings().searchPreviewSnippetCount}:target:${this.searchTarget(card.path, query, scope)}:fields:${fields?.join(",") ?? ""}` : location ? `link:${location.identity}` : ""}${scope.kind === "links" ? `|links:${this.linkContextKey(card, scope)}` : ""}|file:${this.getFileRevision(card.file)}|live:${card.file.stat?.mtime ?? card.mtime}`,
+      `${!query && isDiagramKind(card.fileKind) ? `source:${this.getDiagramFingerprint(card.path)}|` : ""}${query ? `search:${preparation?.revision ?? this.deps.getSearchContentRevision?.() ?? 0}:${query}:snippets:${this.context.getSettings().searchPreviewSnippetCount}:target:${this.searchTarget(card.path, query, scope)}:fields:${fields?.join(",") ?? ""}` : location ? `link:${location.identity}` : ""}${scope.kind === "links" ? `|links:${this.linkContextKey(card, scope)}` : ""}|file:${this.getFileRevision(card.file)}|live:${card.file.stat?.mtime ?? card.mtime}`,
       this.context.getSettings().skipLeadingTags,
     );
   }

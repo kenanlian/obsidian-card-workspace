@@ -13,7 +13,7 @@ The scene body is never read or decompressed. If neither export exists, enable S
 
 Excalidraw previews remove the standard export's canvas background in memory so the preview surface shows through. Recognition requires the `svg-source:excalidraw` marker and a plain, full-viewBox background rectangle before the drawing content. Drawing fills and unrecognized background structures are preserved; the SVG file on disk is unchanged. An export containing only the recognized background shows the empty-diagram message.
 
-Both diagram types always occupy a 160px inline region beneath the title with `contain`, independently of Markdown card image mode, fit and text line settings. Links scopes retain their reference-list previews. Canvas, Excalidraw and Base search stays title-only.
+When browsing folders or boxes, both diagram types occupy a 160px inline region beneath the title with `contain`, independently of Markdown card image mode, fit and text line settings. Links scopes show reference-list previews. Canvas, Excalidraw and Base search stays title-only, and search results hide diagram previews.
 
 Canvas JSON and exported SVG each have a 512 KiB UTF-8 limit checked before and after reading. Canvas draws at most 200 valid nodes and 400 valid connections and reports shortened previews. Diagram reads share the five-task preview queue and first-six-card startup prewarm. The per-view 512-entry preview LRU has an additional 16 MiB diagram Blob budget; display URLs exist only for the image viewport and are released on unmount or closing the view. No diagram data is persisted.
 
@@ -24,6 +24,6 @@ Right-click a navigation folder, the vault root, the folders section heading or 
 1. 在独立测试 vault 的 `.obsidian/plugins/card-workspace/` 中放入本交付构建的 `main.js`、`manifest.json` 和 `styles.css`，启用插件。不要覆盖日常 vault。
 2. 新建含文本、文件、链接和分组节点以及连线的 Canvas；在 Card Workspace 打开其文件夹，检查标题下的缩略图、节点相对位置和箭头。空 Canvas 应显示空状态；坏 JSON 和大于 512 KiB 的文件应显示相应提示。
 3. 放入 `图.excalidraw` 与同目录的 `图.svg`，以及 `图.excalidraw.md` 与 `图.excalidraw.svg`。对 `.excalidraw.md` 同时提供内容不同的 `图.excalidraw.svg` 和 `图.svg`，确认前者优先；移除前者后应显示后者。修改、删除、恢复及重命名 SVG，确认自动更新。两者都缺失时应完整显示提示：「未找到 SVG 预览。请开启 Excalidraw 的 SVG 自动导出，并编辑保存一次绘图，或手动导出 SVG。」将界面语言切换为英文检查对应提示。
-4. 将卡片图片模式依次设为 off/right/inline、fit 设为 cover，文字预览设为 0 行；图形仍应固定内联并完整显示。检查 Markdown 图片、Base 占位、标题搜索与 Links 引用列表仍按原方式工作。滚动卡片流并快速切换文件夹，确认无旧图闪回或滚动跳位。
+4. 将卡片图片模式依次设为 off/right/inline、fit 设为 cover，文字预览设为 0 行；浏览时图形仍应固定内联并完整显示。按标题搜索，确认卡片隐藏图形预览，清空搜索后恢复。检查 Markdown 图片、Base 占位与 Links 引用列表。滚动卡片流并快速切换文件夹，确认无旧图闪回或滚动跳位。
 5. 在隔离测试库启用本机新版 Excalidraw 插件。从普通目录、库根目录、文件夹分区标题、收藏文件夹菜单新建 Excalidraw；连续新建检查 `未命名.excalidraw.md`、`未命名 1.excalidraw.md` 等完整后缀，确认目标路径正确并在新标签直接打开空绘图，无格式错误。绘制图形、保存并重新打开，确认内容保留。切换英文后重复，检查本地化 Untitled 名称及菜单。从 box/links 导航菜单创建时应先切换至目标文件夹。真实宿主关键路径由 Hermes 独立验证，主观 UI/UX 由用户确认；自动化测试不替代此步骤。
 6. 在独立测试库未安装 Excalidraw 和已安装但禁用两种状态下，检查入口仍可点击；点击后提示先安装并启用插件，文件数和标签页数均不变。中英文各检查一次。重新启用后创建应恢复；已有绘图卡片的打开行为、普通笔记/Canvas/Base 新建均保持原有行为。
