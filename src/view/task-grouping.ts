@@ -175,7 +175,8 @@ export function buildTaskMembershipBuckets(
 ): Map<string, GroupBucket | readonly GroupBucket[]> {
   if (spec.dimension !== "tag" && spec.dimension !== "link") return buildTaskGroupBuckets(tasks, spec, strings, clock);
   const dimension = spec.dimension;
-  const result = new Map<string, GroupBucket | readonly GroupBucket[]>();
+  const missingLabel = dimension === "tag" ? strings.bucketNoTag : strings.taskGroup.noLink;
+  const result = new Map<string, readonly GroupBucket[]>();
   const byFile = new Map<string, Map<number, Array<{ value: string; original: string; col: number }>>>();
   for (const task of tasks) {
     let lines = byFile.get(task.filePath);
@@ -207,14 +208,18 @@ export function buildTaskMembershipBuckets(
       const key = `task-${dimension}:value:${identity}`;
       memberships.set(key, { key, label, detail: path ?? "", header: header(dimension, label, path), sortKey: dimension === "tag" ? identity : path ?? label, isMissing: false });
     }
-    result.set(task.path, memberships.size ? [...memberships.values()] : missingBucket(dimension, dimension === "tag" ? strings.bucketNoTag : strings.taskGroup.noLink));
+    result.set(task.path, memberships.size ? [...memberships.values()] : [missingBucket(dimension, missingLabel)]);
   }
   // Stable tag spelling independent of source/task sort order.
   const canonical = new Map<string, GroupBucket>();
-  for (const membership of result.values()) for (const bucket of Array.isArray(membership) ? membership : [membership]) {
-    const old = canonical.get(bucket.key);
-    if (!old || bucket.label < old.label) canonical.set(bucket.key, bucket);
+  for (const buckets of result.values()) {
+    for (const bucket of buckets) {
+      const old = canonical.get(bucket.key);
+      if (!old || bucket.label < old.label) canonical.set(bucket.key, bucket);
+    }
   }
-  for (const [id, membership] of result) result.set(id, (Array.isArray(membership) ? membership : [membership]).map(bucket => canonical.get(bucket.key)!));
+  for (const [path, buckets] of result) {
+    result.set(path, buckets.map((bucket) => canonical.get(bucket.key)!));
+  }
   return result;
 }
