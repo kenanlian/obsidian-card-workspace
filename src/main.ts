@@ -1,5 +1,5 @@
 import { reconcileBoxDrawMembership } from "./view/card-box-membership";
-import { closeAllIconPickers, validateIconPickers } from "./icon-picker/IconPicker";
+import { closeAllIconPickers, updateIconPickerSettings } from "./icon-picker/IconPicker";
 import { IconReconciler } from "./services/IconReconciler";
 import { RuntimeActivity } from "./runtime/activity";
 import { resolveRuntimeResourceBudget } from "./runtime/resource-budget";
@@ -971,6 +971,7 @@ export default class CardWorkspacePlugin extends Plugin {
       await this.settingsStore.reloadExternal();
       if (this.disposed) return;
       const next = this.getSettings();
+      updateIconPickerSettings(next);
       this.workspaceSettingTab?.refreshTemplateOptions();
       this.withFolderViews(view => {
         const scope = view.getCardScope();
@@ -1022,7 +1023,9 @@ export default class CardWorkspacePlugin extends Plugin {
 
     // Render synchronous memory now; the returned promise still waits for persistence.
     const next = this.getSettings();
-    validateIconPickers();
+    if (patch.iconDefaults || patch.iconOverrides || patch.recentIcons || patch.emojiSkinTone !== undefined || patch.boxes || patch.noteTemplates) {
+      updateIconPickerSettings(next);
+    }
     if (patch.noteTemplates !== undefined || patch.quickInputTemplateId !== undefined) this.workspaceSettingTab?.refreshTemplateOptions();
     this.taskEditing?.refresh();
     this.withFolderViews((view) => {

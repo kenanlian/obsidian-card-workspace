@@ -1,5 +1,6 @@
 import { setIcon } from "obsidian";
 import { EMOJI_SKIN_TONES, NO_ICON, iconSpecEquals, lucideBaseName, type EmojiSkinTone, type IconCategory, type IconSpec, type IconTarget } from "../icon-config";
+import type { PluginSettings } from "../settings";
 import { renderContentIcon } from "../icon-render";
 import type { IconStrings } from "../i18n/icons";
 import { emojiVariant, EMOJI_GROUP_ICONS, EMOJI_GROUPS, getEmojiCatalog, looksLikeEmoji, normalizeEmojiInput, type EmojiEntry } from "./emoji-catalog";
@@ -18,15 +19,13 @@ export interface IconPickerOptions {
   autoFocusSearch?: boolean;
   position?: { x: number; y: number };
   strings: IconStrings;
-  read: () => IconSpec;
-  canReset: () => boolean;
+  read: (settings: PluginSettings) => IconSpec;
+  canReset: (settings: PluginSettings) => boolean;
   resetLabel?: string;
-  recent?: () => readonly IconSpec[];
-  skinTone?: () => EmojiSkinTone;
   setSkinTone?: (tone: EmojiSkinTone) => void;
   apply: (spec: IconSpec | null) => Promise<void>;
   retry: () => Promise<void>;
-  isValid: () => boolean;
+  isValid: (settings: PluginSettings) => boolean;
   onClose?: () => void;
   restoreFocus?: () => void;
 }
@@ -34,6 +33,7 @@ const byDocument = new WeakMap<Document, IconPicker>();
 const sessions = new Set<IconPicker>();
 /** Called at explicit identity/lifecycle boundaries, including mutations without settings changes. */
 export function validateIconPickers(): void { for (const picker of sessions) picker.validate(); }
+export function updateIconPickerSettings(settings: PluginSettings): void { for (const picker of sessions) picker.updateSettings(settings); }
 export function closeIconPickersForTarget(predicate: (target: IconTarget) => boolean): void { for (const picker of sessions) if (picker.target && predicate(picker.target)) picker.close(false); }
 export function closeAllIconPickers(): void { for (const picker of sessions) picker.close(false); }
 /** Clicking the anchor of an open picker closes it instead of reopening. */
@@ -80,19 +80,21 @@ export class IconPicker {
   private rowOfIndex: number[] = [];
   private columns = FALLBACK_COLUMNS;
   private tab: "lucide" | "emoji" = "lucide";
+  private selected: IconSpec;
   private tone: EmojiSkinTone;
   private active = 0;
   private revision = 0;
   private frame = 0;
   private closed = false;
 
-  constructor(private readonly options: IconPickerOptions) {
+  constructor(private readonly options: IconPickerOptions, private settings: PluginSettings) {
     this.doc = options.anchor.ownerDocument;
     byDocument.get(this.doc)?.close(false);
     byDocument.set(this.doc, this);
     sessions.add(this);
     this.lucide = createLucideCatalog();
-    this.tone = options.skinTone?.() ?? "";
+    this.selected = options.read(settings);
+    this.tone = settings.emojiSkinTone;
     const s = options.strings;
     this.element = this.create("div", "fce-icon-picker");
     this.element.classList.toggle("is-sheet", options.layout === "sheet");
@@ -196,12 +198,19 @@ export class IconPicker {
       this.listen(win, "resize", () => { this.position(); this.relayout(); });
       if (win.visualViewport) { this.listen(win.visualViewport, "resize", () => this.position()); this.listen(win.visualViewport, "scroll", () => this.position()); }
       this.listen(win, "pagehide", () => this.close(false));
-      const observer = new win.MutationObserver(records => { if (records.some(record => !this.element.contains(record.target))) this.validate(); });
-      observer.observe(this.doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "aria-hidden"] });
+      const observer = new win.MutationObserver(records => {
+        // A detached or hidden anchor ends the session. Other UI activity never repaints the picker.
+        if (!this.element.isConnected || !this.anchor.isConnected || records.some(record => record.target.contains(this.anchor))) {
+          this.validate();
+        }
+      });
+      observer.observe(this.doc.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "hidden", "aria-hidden"] });
       this.cleanup.push(() => observer.disconnect());
       this.cleanup.push(() => { if (this.frame) win.cancelAnimationFrame?.(this.frame); });
     }
-    this.switchTab(options.read().kind === "emoji" ? "emoji" : "lucide");
+    this.renderCurrentIcon();
+    this.resetButton.disabled = !options.canReset(settings);
+    this.switchTab(this.selected.kind === "emoji" ? "emoji" : "lucide");
     this.position();
     if (options.autoFocusSearch === false) this.element.focus({ preventScroll: true }); else this.search.focus();
   }
@@ -240,7 +249,7 @@ export class IconPicker {
     this.updateActiveGroup();
     this.status.textContent = s.resultCount(new Set(this.candidates.map(candidate => `${candidate.spec.kind}:${candidate.spec.value}`)).size);
   }
-  private recent(kind: IconSpec["kind"]): IconSpec[] { return (this.options.recent?.() ?? []).filter(spec => spec.kind === kind); }
+  private recent(kind: IconSpec["kind"]): IconSpec[] { return this.settings.recentIcons.filter(spec => spec.kind === kind); }
   private lucideSections(query: string): Section[] {
     const s = this.options.strings;
     const toCandidate = (entry: { id: string; name: string }): Candidate => ({ spec: { kind: "lucide", value: entry.id }, label: entry.name, name: entry.name });
@@ -324,7 +333,7 @@ export class IconPicker {
     for (const [index, element] of this.rendered) if (!visible.has(index)) { element.remove(); this.rendered.delete(index); }
     // Candidate listeners belong to their nodes and are collected with the bounded window.
     for (const index of visible) if (!this.rendered.has(index)) this.rendered.set(index, this.renderRow(index));
-    this.refreshSelection();
+    this.updateCandidateButtons();
   }
   private renderRow(index: number): HTMLElement {
     const row = this.rows[index];
@@ -346,18 +355,39 @@ export class IconPicker {
     }
     return rowEl;
   }
-  refreshSelection(): void {
-    if (this.closed) return;
-    const current = this.options.read();
-    renderContentIcon(this.currentIcon, { spec: current, fallback: "file" });
-    this.resetButton.disabled = !this.options.canReset();
-    this.noneButton.setAttribute("aria-pressed", String(current.kind === "none"));
-    this.noneButton.classList.toggle("is-selected", current.kind === "none");
+  updateSettings(settings: PluginSettings): void {
+    this.settings = settings;
+    if (!this.validate()) return;
+    const selected = this.options.read(settings);
+    if (this.selected.kind !== selected.kind || this.selected.value !== selected.value) {
+      this.selected = selected;
+      this.renderCurrentIcon();
+      this.updateCandidateButtons();
+    }
+    const disabled = !this.options.canReset(settings);
+    if (this.resetButton.disabled !== disabled) this.resetButton.disabled = disabled;
+    if (this.tone !== settings.emojiSkinTone) {
+      this.tone = settings.emojiSkinTone;
+      this.renderTone();
+      if (this.tab === "emoji") this.filter();
+    }
+  }
+  private renderCurrentIcon(): void {
+    renderContentIcon(this.currentIcon, { spec: this.selected, fallback: "file" });
+    const none = this.selected.kind === "none";
+    this.noneButton.setAttribute("aria-pressed", String(none));
+    this.noneButton.classList.toggle("is-selected", none);
+  }
+  private updateCandidateButtons(): void {
     for (const button of Array.from(this.grid.querySelectorAll<HTMLButtonElement>("button[data-index]"))) {
       const index = Number(button.dataset.index);
-      const selected = iconSpecEquals(current, this.candidates[index].spec);
-      button.tabIndex = index === this.active ? 0 : -1;
-      button.setAttribute("aria-pressed", String(selected)); button.classList.toggle("is-selected", selected);
+      const tabIndex = index === this.active ? 0 : -1;
+      if (button.tabIndex !== tabIndex) button.tabIndex = tabIndex;
+      const selected = iconSpecEquals(this.selected, this.candidates[index].spec);
+      if (button.getAttribute("aria-pressed") !== String(selected)) {
+        button.setAttribute("aria-pressed", String(selected));
+        button.classList.toggle("is-selected", selected);
+      }
     }
   }
   private candidateFrom(node: EventTarget | null): Candidate | null {
@@ -435,7 +465,6 @@ export class IconPicker {
 
   select(spec: IconSpec | null): Promise<void> { return this.choose(spec); }
   private async choose(spec: IconSpec | null): Promise<void> {
-    if (!this.validate()) return;
     if (await this.persist(() => this.options.apply(spec))) this.close();
   }
   /** Resolves true only when this is still the latest save and it succeeded. */
@@ -443,7 +472,7 @@ export class IconPicker {
     if (!this.validate()) return false;
     const revision = ++this.revision;
     this.error.hidden = true;
-    try { const pending = work(); this.refreshSelection(); await pending; return !this.closed && revision === this.revision; }
+    try { await work(); return !this.closed && revision === this.revision; }
     catch (error) {
       console.warn("Card Workspace: icon save failed", error);
       if (!this.closed && revision === this.revision) { this.error.hidden = false; this.position(); }
@@ -453,8 +482,8 @@ export class IconPicker {
   validate(): boolean {
     if (this.closed) return false;
     if (!this.element.isConnected || !this.options.anchor.isConnected || this.options.anchor.ownerDocument !== this.doc
-      || this.options.anchor.checkVisibility?.() === false || !this.options.isValid()) { this.close(false); return false; }
-    this.refreshSelection(); return true;
+      || this.options.anchor.checkVisibility?.() === false || !this.options.isValid(this.settings)) { this.close(false); return false; }
+    return true;
   }
   private position(): void {
     const win = this.doc.defaultView; if (!win) return;

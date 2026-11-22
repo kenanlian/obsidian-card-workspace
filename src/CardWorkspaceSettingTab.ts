@@ -48,6 +48,7 @@ import {
   isDragInsertAction,
   isNewNoteTemplate,
   type PartialPluginSettings,
+  type PluginSettings,
 } from "./settings";
 import { resolveTemplateName, DEFAULT_TEMPLATE_STORAGE_FOLDER, DEFAULT_QUICK_INPUT_VISIBILITY, QUICK_INPUT_DUPLICATE_TITLES, normalizeQuickInputVisibility, type QuickInputDuplicateTitle, type QuickInputVisibility, normalizeQuickInput } from "./note-input";
 import { attachFolderInputSuggest } from "./view/folder-input-suggest";
@@ -553,8 +554,8 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     let disposed = false;
     const strings = getUiStrings(this.plugin.getUiLanguage()).icons;
     const fallback = builtinCategoryIcon(category);
-    const read = (): IconSpec => this.plugin.getSettings().iconDefaults?.[category] ?? { kind: "lucide", value: fallback };
-    const customized = (): boolean => Boolean(this.plugin.getSettings().iconDefaults?.[category]);
+    const read = (settings: PluginSettings): IconSpec => settings.iconDefaults?.[category] ?? { kind: "lucide", value: fallback };
+    const customized = (settings: PluginSettings): boolean => Boolean(settings.iconDefaults?.[category]);
     const device = this.plugin.runtimePlatform?.device ?? "desktop";
     const save = async (spec: IconSpec | null): Promise<void> => {
       const current = this.plugin.getSettings();
@@ -568,12 +569,13 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
     let resetButton: HTMLElement | null = null;
     const render = (): void => {
       if (disposed) return;
+      const settings = this.plugin.getSettings();
       if (iconButton) {
-        const spec = read();
+        const spec = read(settings);
         renderContentIcon(iconButton, { spec, fallback });
         if (spec.kind === "none") iconButton.textContent = strings.noIcon;
       }
-      resetButton?.toggleClass("fce-is-hidden", !customized());
+      resetButton?.toggleClass("fce-is-hidden", !customized(settings));
     };
     setting.addButton(button => {
       iconButton = button.buttonEl;
@@ -585,14 +587,12 @@ export class CardWorkspaceSettingTab extends PluginSettingTab {
           title: strings.categories[category], subtitle: strings.defaultSubtitle,
           layout: device === "phone" ? "sheet" : "popover", autoFocusSearch: device === "desktop",
           canReset: customized, resetLabel: strings.resetDefault,
-          recent: () => this.plugin.getSettings().recentIcons ?? [],
-          skinTone: () => this.plugin.getSettings().emojiSkinTone ?? "",
           setSkinTone: tone => { this.plugin.saveSettings({ emojiSkinTone: tone }).catch(error => console.warn("Card Workspace: skin tone save failed", error)); },
           isValid: () => !disposed && button.buttonEl.isConnected,
           apply: save,
           retry: () => this.plugin.flushSettings(),
           onClose: () => pickers.delete(picker),
-        });
+        }, this.plugin.getSettings());
         pickers.add(picker);
       });
     });

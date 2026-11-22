@@ -10,6 +10,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const output = process.argv[2] ?? "/tmp/fce-content-icons-browser.json";
 assert(path.isAbsolute(output), "Report path must be absolute");
 const host = await build({ entryPoints: [path.join(root, "scripts/runtime-bundle-host.ts")], bundle: true, write: false, platform: "browser", format: "iife", globalName: "IconTestHost", logLevel: "silent" });
+const cm = await build({ stdin: { contents: 'export * as state from "@codemirror/state"; export * as view from "@codemirror/view";', resolveDir: root }, bundle: true, write: false, platform: "browser", format: "iife", globalName: "IconTestCodeMirror" });
 const source = await readFile(path.join(root, "main.js"), "utf8");
 const css = await readFile(path.join(root, "styles.css"), "utf8");
 const catalogProbe = await build({ stdin: { contents: "export {getEmojiCatalog,isEmojiCatalogInitialized} from './src/icon-picker/emoji-catalog';", resolveDir: root }, bundle: true, write: false, platform: "browser", format: "iife", globalName: "CatalogProbe" });
@@ -23,6 +24,7 @@ try {
     page.on("pageerror", error => errors.push(String(error)));
     await page.setContent(`<style>${css}\n:root {--background-primary:${theme === "dark" ? "#202020" : "#ffffff"};--text-normal:${theme === "dark" ? "#dddddd" : "#222222"};--text-muted:#888;--interactive-accent:#7254df;--background-modifier-border:#888;--radius-m:8px;--icon-size:16px;--layer-popover:1100;--background-secondary:#8882;--font-ui-small:13px;--font-smallest:11px;--background-modifier-hover:${theme === "dark" ? "rgba(255,255,255,0.075)" : "rgba(0,0,0,0.067)"};--background-modifier-active-hover:rgba(114,84,223,0.15);--shadow-s:0 1px 2px rgba(0,0,0,0.15);--shadow-l:0 8px 28px rgba(0,0,0,0.22)}body{margin:0}.folder-card-view{height:680px;width:100%}.fce-card-title-group{min-height:24px}.fce-list{min-height:300px}</style>`);
     await page.addScriptTag({ content: host.outputFiles[0].text });
+    await page.addScriptTag({ content: cm.outputFiles[0].text });
     await page.evaluate(device => {
       const h = window.IconTestHost;
       const bounds = HTMLElement.prototype.getBoundingClientRect; h.installDom(); HTMLElement.prototype.getBoundingClientRect = bounds;
@@ -31,7 +33,8 @@ try {
       window.module = { exports: {} };
       window.require = id => {
         if (id === "obsidian") return h;
-        if (id.startsWith("@codemirror/")) return { Prec: { highest: value => value }, dropCursor: () => ({}), EditorView: class { static domEventHandlers(value) { return value; } }, WidgetType: class {} };
+        if (id === "@codemirror/state") return window.IconTestCodeMirror.state;
+        if (id === "@codemirror/view") return window.IconTestCodeMirror.view;
         throw new Error(`Unexpected native import ${id}`);
       };
     }, device);
@@ -55,6 +58,30 @@ try {
     });
     await page.locator(".fce-card-file-icon").waitFor();
     await page.waitForTimeout(200);
+    if (device === "desktop") {
+      for (const selector of [".fce-card", '[data-nav-row-id="folder:"]']) {
+        await page.locator(selector).click({ button: "right" });
+        await page.evaluate(() => {
+          const menu = window.IconTestHost.getObsidianMenuInstances().at(-1);
+          menu.items.find(item => item.title === "Change icon").onClick();
+        });
+        await page.locator(".fce-icon-picker").waitFor();
+        const repaints = await page.evaluate(async () => {
+          const picker = document.querySelector(".fce-icon-picker");
+          let writes = 0;
+          const observer = new MutationObserver(records => { writes += records.length; });
+          observer.observe(picker, { attributes: true, childList: true, subtree: true });
+          for (let i = 0; i < 4; i++) {
+            document.body.classList.toggle("host-ui-active");
+            await new Promise(resolve => requestAnimationFrame(resolve));
+          }
+          observer.disconnect();
+          return writes;
+        });
+        assert.equal(repaints, 0, "Unrelated host activity must leave the open picker untouched");
+        await page.keyboard.press("Escape");
+      }
+    }
     const before = await page.evaluate(() => window.iconsFixture.counts());
     await page.locator(".fce-card-file-icon").click();
     await page.locator(".fce-icon-picker").waitFor();

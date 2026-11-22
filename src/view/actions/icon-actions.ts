@@ -1,6 +1,7 @@
 import { type Menu } from "obsidian";
 import { IconPicker, closeIconPickerForAnchor } from "../../icon-picker/IconPicker";
 import { iconTargetCategory, iconTargetKey, pushRecentIcon, resolveContentIcon, type IconTarget } from "../../icon-config";
+import type { PluginSettings } from "../../settings";
 import type { ViewContext } from "../view-context";
 
 /** Per-view intent owner; the picker owns only the transient browsing session. */
@@ -19,18 +20,17 @@ export class IconActions {
     const settings = this.context.getSettings();
     const box = settings.boxes.find(box => box.id === target.ref);
     const template = settings.noteTemplates.find(template => template.id === target.ref);
-    const valid = (): boolean => {
+    const valid = (current: PluginSettings): boolean => {
       if (this.disposed) return false;
       if (target.kind === "file" || target.kind === "folder") {
         if (file === null || resolve() !== file) return false;
         return target.kind === "folder" && target.ref === "" ? true : (file as { path: string }).path === target.ref;
       }
-      const current = this.context.getSettings();
       if (target.kind === "box") return current.boxes.some(entry => entry.id === target.ref && entry.name === box?.name);
       if (target.kind === "template") return current.noteTemplates.some(entry => entry.id === target.ref && entry.name === template?.name && entry.filePath === template?.filePath);
       return true;
     };
-    if (!valid()) return null;
+    if (!valid(settings)) return null;
     const strings = this.context.getUiStrings().icons;
     const device = this.context.runtimePlatform?.device ?? "desktop";
     const key = iconTargetKey(target);
@@ -41,15 +41,13 @@ export class IconActions {
       subtitle: strings.categories[iconTargetCategory(target)],
       layout: device === "phone" ? "sheet" : "popover",
       autoFocusSearch: device === "desktop",
-      read: () => resolveContentIcon(this.context.getSettings(), target),
-      canReset: () => Boolean(this.context.getSettings().iconOverrides?.[key]),
-      recent: () => this.context.getSettings().recentIcons ?? [],
-      skinTone: () => this.context.getSettings().emojiSkinTone ?? "",
+      read: current => resolveContentIcon(current, target),
+      canReset: current => Boolean(current.iconOverrides?.[key]),
       setSkinTone: tone => { this.context.saveSettings({ emojiSkinTone: tone }).catch(error => console.warn("Card Workspace: skin tone save failed", error)); },
       isValid: valid,
       apply: async spec => {
-        if (!valid()) return;
         const current = this.context.getSettings();
+        if (!valid(current)) return;
         const next = { ...current.iconOverrides };
         if (spec === null) delete next[key]; else next[key] = spec;
         await this.context.saveSettings({ iconOverrides: next, ...(spec ? { recentIcons: pushRecentIcon(current.recentIcons, spec) } : {}) });
@@ -58,7 +56,7 @@ export class IconActions {
       retry: () => this.flush(),
       restoreFocus: () => (anchor.closest<HTMLElement>("[data-nav-row-id]") ?? anchor).focus({ preventScroll: true }),
       onClose: () => this.sessions.delete(picker),
-    });
+    }, settings);
     this.sessions.add(picker); return picker;
   }
   /** Removing an override is a direct command; it never opens the picker. */

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IconActions } from "./icon-actions";
-import { closeAllIconPickers, validateIconPickers } from "../../icon-picker/IconPicker";
+import { closeAllIconPickers, updateIconPickerSettings, validateIconPickers } from "../../icon-picker/IconPicker";
 import { iconTargetKey } from "../../icon-config";
 import { getUiStrings } from "../../i18n";
 import { migrateSettings, mergeSettings, type PartialPluginSettings } from "../../settings";
@@ -13,7 +13,7 @@ function fixture(device?: "desktop" | "phone") {
   const root = { path: "/", children: [] };
   let settings = migrateSettings({ noteTemplates: [{ id: "t", name: "Template", filePath: "Missing.md" }] });
   const anchor = document.createElement("button"); document.body.append(anchor);
-  const saveSettings = vi.fn(async (patch: PartialPluginSettings) => { settings = mergeSettings(settings, patch); validateIconPickers(); });
+  const saveSettings = vi.fn(async (patch: PartialPluginSettings) => { settings = mergeSettings(settings, patch); updateIconPickerSettings(settings); });
   const notify = vi.fn();
   const context = { getSettings: () => settings, saveSettings, notify, getUiStrings: () => getUiStrings("en"),
     runtimePlatform: device ? { device } : undefined,
@@ -45,6 +45,58 @@ describe("icon intent lifecycle", () => {
     await picker.select({ kind: "none", value: "" });
     expect(f.getSettings().iconOverrides[iconTargetKey({ kind: "folder", ref: "" })]).toEqual({ kind: "none", value: "" });
     expect(f.getSettings().recentIcons).toEqual([]);
+  });
+  it("opens from one settings read and leaves the picker untouched during unrelated workspace mutations", async () => {
+    const f = fixture();
+    const reads = vi.spyOn(f.context, "getSettings");
+    const picker = f.actions.open({ kind: "file", ref: "A.md" })!;
+    expect(reads).toHaveBeenCalledTimes(1);
+    await flushPromises();
+
+    const writes: MutationRecord[] = [];
+    const observer = new MutationObserver(records => writes.push(...records));
+    observer.observe(picker.element, { subtree: true, attributes: true, childList: true });
+    try {
+      const sibling = document.createElement("div");
+      document.body.append(sibling);
+      for (const element of [sibling, document.body, f.anchor]) {
+        element.classList.toggle("is-active");
+        await flushPromises();
+      }
+      expect(picker.element.isConnected).toBe(true);
+      expect(reads).toHaveBeenCalledTimes(1);
+      expect(writes).toHaveLength(0);
+    } finally {
+      observer.disconnect();
+    }
+  });
+  it("updates an open picker from shared settings while preserving unaffected candidates", async () => {
+    const f = fixture();
+    const target = { kind: "file", ref: "A.md" } as const;
+    const picker = f.actions.open(target)!;
+    const header = picker.element.querySelector(".fce-icon-picker-current")!;
+    const reset = picker.element.querySelector<HTMLButtonElement>(".fce-icon-picker-reset")!;
+    const candidate = (name: string) => picker.element.querySelector<HTMLButtonElement>(`button[aria-label="${name}"][data-index]`)!;
+    const star = candidate("star");
+    const stable = candidate("heart");
+    const writes: MutationRecord[] = [];
+    const observer = new MutationObserver(records => writes.push(...records));
+    observer.observe(stable, { attributes: true, childList: true, subtree: true });
+    try {
+      await f.saveSettings({ iconDefaults: { markdown: { kind: "lucide", value: "star" } } });
+      expect(header.getAttribute("data-icon")).toBe("star");
+      expect(star.getAttribute("aria-pressed")).toBe("true");
+      expect(reset.disabled).toBe(true);
+      await f.saveSettings({ iconOverrides: { [iconTargetKey(target)]: { kind: "lucide", value: "star" } } });
+      expect(reset.disabled).toBe(false);
+      await f.saveSettings({ iconOverrides: { [iconTargetKey(target)]: { kind: "emoji", value: "📘" } } });
+      expect(header.textContent).toBe("📘");
+      expect(star.getAttribute("aria-pressed")).toBe("false");
+      expect(candidate("heart")).toBe(stable);
+      expect(writes).toHaveLength(0);
+    } finally {
+      observer.disconnect();
+    }
   });
   it("closes a renamed file session before it can write to its old path", async () => {
     const f = fixture(); const picker = f.actions.open({ kind: "file", ref: "A.md" })!;

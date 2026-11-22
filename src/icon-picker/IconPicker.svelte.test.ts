@@ -3,10 +3,11 @@ import { IconPicker, closeAllIconPickers, closeIconPickerForAnchor, validateIcon
 import { getEmojiCatalog, isEmojiCatalogInitialized } from "./emoji-catalog";
 import { iconStrings } from "../i18n/icons";
 import type { EmojiSkinTone, IconSpec } from "../icon-config";
+import { DEFAULT_SETTINGS, type PluginSettings } from "../settings";
 import { renderContentIcon } from "../icon-render";
 import { installObsidianDomHelpers } from "../__mocks__/obsidian-dom";
 
-function fixture(doc = document, extra: Partial<IconPickerOptions> = {}) {
+function fixture(doc = document, extra: Partial<IconPickerOptions> = {}, settings: PluginSettings = DEFAULT_SETTINGS) {
   installObsidianDomHelpers(doc);
   const anchor = doc.createElement("button"); doc.body.append(anchor);
   let current: IconSpec = { kind: "lucide", value: "file" };
@@ -15,7 +16,7 @@ function fixture(doc = document, extra: Partial<IconPickerOptions> = {}) {
   const retry = vi.fn(async () => {});
   const valid = vi.fn(() => true);
   const setSkinTone = vi.fn<(tone: EmojiSkinTone) => void>();
-  const picker = new IconPicker({ anchor, strings: iconStrings.en, read: () => current, canReset: () => custom, apply, retry, isValid: valid, setSkinTone, ...extra });
+  const picker = new IconPicker({ anchor, strings: iconStrings.en, read: () => current, canReset: () => custom, apply, retry, isValid: valid, setSkinTone, ...extra }, settings);
   return { picker, anchor, apply, retry, valid, setSkinTone, read: () => current };
 }
 function button(root: HTMLElement, label: string): HTMLButtonElement {
@@ -62,7 +63,7 @@ describe("document-local nonmodal icon picker", () => {
     expect(root.isConnected).toBe(false); expect(document.activeElement).toBe(anchor);
   });
   it("shows recent icons per tab and previews the hovered candidate", () => {
-    const { picker } = fixture(document, { recent: () => [{ kind: "emoji", value: "🌙" }, { kind: "lucide", value: "lucide-heart" }] });
+    const { picker } = fixture(document, {}, { ...DEFAULT_SETTINGS, recentIcons: [{ kind: "emoji", value: "🌙" }, { kind: "lucide", value: "lucide-heart" }] });
     const root = picker.element;
     expect(root.querySelector(".fce-icon-picker-section")!.textContent).toBe("Recently used");
     expect(labels(root)[0]).toBe("heart");
@@ -120,6 +121,17 @@ describe("document-local nonmodal icon picker", () => {
     f = fixture(); f.valid.mockReturnValue(false); validateIconPickers(); expect(f.picker.element.isConnected).toBe(false);
     f = fixture(); f.anchor.remove(); await Promise.resolve(); expect(f.picker.element.isConnected).toBe(false);
     f = fixture(); expect(closeIconPickerForAnchor(f.anchor)).toBe(true); expect(f.picker.element.isConnected).toBe(false);
+  });
+  it("closes when an ancestor hides the anchor", async () => {
+    const parent = document.createElement("div");
+    const anchor = document.createElement("button");
+    document.body.append(parent);
+    parent.append(anchor);
+    anchor.checkVisibility = () => !parent.hidden;
+    const { picker } = fixture(document, { anchor });
+    parent.hidden = true;
+    await flush();
+    expect(picker.element.isConnected).toBe(false);
   });
   it("closes the tone panel before the picker on Escape", () => {
     const { picker } = fixture();
