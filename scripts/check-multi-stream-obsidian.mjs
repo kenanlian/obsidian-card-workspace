@@ -145,14 +145,18 @@ async function checkRestore(page) {
     return saved.anchor;
   });
   assert.ok(before?.ref?.kind === "card", "scrolled stream must have a reading anchor");
-  await page.waitForFunction(anchor => {
+  const restored = await page.waitForFunction(anchor => {
     const state = window.streamBenchView.getState().streams.find(s => s.id === "bench-0");
     const list = document.querySelector('[data-stream-id="bench-0"] .fce-list');
     const title = anchor.ref.path.split("/").pop().replace(/\.md$/, "");
     const mounted = [...(list?.querySelectorAll(".fce-card h4") ?? [])].some(node => node.textContent === title);
     return mounted && list.scrollTop > 0 && state?.anchor?.ref.path === anchor.ref.path && Math.abs(state.anchor.offset - anchor.offset) <= 2;
-  }, before, { timeout: 10000 });
-  return before;
+  }, before, { timeout: 10000 }).then(() => true, error => {
+    if (error.name === "TimeoutError") return false;
+    throw error;
+  });
+  const after = await page.evaluate(() => window.streamBenchView.getState().streams.find(s => s.id === "bench-0")?.anchor);
+  return { before, after, restored };
 }
 
 async function runLane(lane, revision) {
@@ -197,6 +201,7 @@ try {
   const after = await runLane("candidate", candidate);
   for (const [i, result] of after.entries()) {
     const refs = before[i].rounds;
+    assert.ok(result.anchor.restored, "saved reading anchor did not restore: " + JSON.stringify(result.anchor));
     for (const [j, r] of result.rounds.entries()) {
       assert.deepEqual([r.width, r.height], [refs[j].width, refs[j].height], "paired scrollports must have equal dimensions");
       assert.equal(r.blanks, 0, "blank scrollport in candidate");

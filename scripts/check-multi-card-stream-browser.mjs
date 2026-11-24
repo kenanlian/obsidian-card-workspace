@@ -70,6 +70,9 @@ try {
  const errors = []; page.on('pageerror', error => errors.push(String(error)));
  await page.setContent('<style>body{margin:0}*{box-sizing:border-box}#mount{height:760px;--background-primary:#fff;--background-secondary:#eee;--text-normal:#222;--text-muted:#777;--background-modifier-border:#aaa;--interactive-accent:#705de8}</style><div class="folder-card-view" id="mount"></div>');
  await page.addStyleTag({ content: await readFile('styles.css', 'utf8') });
+ // The synthetic setIcon sets data-icon only. Give toolbar buttons the same
+ // in-flow icon box as the host so their geometry is independent of UA font metrics.
+ await page.addStyleTag({ content: '.fce-toolbar-button[data-icon]::before { content: ""; display: block; width: 16px; height: 16px; }' });
  await page.addScriptTag({ content: bundle.outputFiles[0].text });
  // Fractional sidebar sizes and classic scrollbars occur together on Windows.
  await page.addStyleTag({ content: '.fce-stream-stage::-webkit-scrollbar { width: 12px; height: 12px; }' });
