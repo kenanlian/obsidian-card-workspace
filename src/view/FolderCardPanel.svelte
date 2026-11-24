@@ -1005,6 +1005,16 @@
   let readingPositionWindow: Window | null = null;
   onDestroy(() => readingPositionWindow?.clearTimeout(readingPositionTimer));
 
+  function saveSettledPosition(): void {
+    const remaining = userScrollLockUntilMs - Date.now();
+    if (remaining > 0 && readingPositionWindow) {
+      readingPositionTimer = readingPositionWindow.setTimeout(saveSettledPosition, remaining);
+    } else {
+      readingPositionTimer = undefined;
+      onReadingPositionChange?.();
+    }
+  }
+
   function handleScroll(): void {
     if (!viewportEl) {
       return;
@@ -1013,10 +1023,9 @@
     // applyScrollTop already recorded programmatic moves before their DOM scroll event.
     if (!isAdjustingScroll && viewportEl.scrollTop !== scrollTop) {
       markUserScrolling();
-      if (onReadingPositionChange) {
+      if (onReadingPositionChange && readingPositionTimer === undefined) {
         readingPositionWindow = viewportEl.ownerDocument.defaultView ?? window;
-        readingPositionWindow.clearTimeout(readingPositionTimer);
-        readingPositionTimer = readingPositionWindow.setTimeout(onReadingPositionChange, USER_SCROLL_LOCK_MS);
+        readingPositionTimer = readingPositionWindow.setTimeout(saveSettledPosition, USER_SCROLL_LOCK_MS);
       }
     }
 

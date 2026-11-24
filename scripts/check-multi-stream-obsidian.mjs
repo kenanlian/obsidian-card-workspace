@@ -172,12 +172,23 @@ async function runLane(lane, revision) {
   try {
     browser = await connect(profile, child);
     const page = await openWindow(browser, vault);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Performance.enable");
+    const durations = async () => Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics
+      .filter(metric => ["TaskDuration", "ScriptDuration", "LayoutDuration"].includes(metric.name))
+      .map(metric => [metric.name, metric.value]));
     const results = [];
     for (const count of [1, 2, 4]) {
       await restoreLayout(page, count);
       await delay(400);
       const rounds = [];
-      for (let i = 0; i < 3; i++) rounds.push(await measure(page));
+      for (let i = 0; i < 3; i++) {
+        const start = await durations();
+        const round = await measure(page);
+        const end = await durations();
+        round.rendererMs = Object.fromEntries(Object.keys(end).map(key => [key, Math.round((end[key] - start[key]) * 1000)]));
+        rounds.push(round);
+      }
       await delay(350);
       const anchor = await checkRestore(page);
       const result = { lane, count, rounds, anchor };
@@ -198,8 +209,10 @@ async function runLane(lane, revision) {
 }
 
 try {
-  const before = await runLane("baseline", baseline);
-  const after = await runLane("candidate", candidate);
+  const candidateFirst = process.argv.includes("--candidate-first");
+  const first = candidateFirst ? await runLane("candidate", candidate) : await runLane("baseline", baseline);
+  const second = candidateFirst ? await runLane("baseline", baseline) : await runLane("candidate", candidate);
+  const [before, after] = candidateFirst ? [second, first] : [first, second];
   for (const [i, result] of after.entries()) {
     const refs = before[i].rounds;
     assert.ok(result.anchor.restored, "saved reading anchor did not restore: " + JSON.stringify(result.anchor));
