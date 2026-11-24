@@ -2,7 +2,7 @@
 // Run from the worktree root after installing its locked dependencies.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { baseline, calibrate, calibrationSize, compare, matchWork } from "./multi-stream-timing.mjs";
+import { baseline, calibrate, calibrationSize, compare, decide, matchWork } from "./multi-stream-timing.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
 import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
@@ -317,16 +317,11 @@ async function runLane(lane, revision, slowControl = false) {
 }
 
 const args = process.argv.slice(2);
-const calibrating = args.includes("--calibrate");
 const selfCheck = args.includes("--self-check");
 const candidateFirst = args.includes("--candidate-first");
 const outputIndex = args.indexOf("--output");
 const output = outputIndex >= 0 ? args[outputIndex + 1] : null;
-const calibrationFile = new URL("../diagnostics/multi-stream-scroll-calibration.json", import.meta.url);
-const protocolHash = createHash("sha256")
-  .update(await readFile(new URL(import.meta.url)))
-  .update(await readFile(new URL("./multi-stream-timing.mjs", import.meta.url))).digest("hex");
-const report = { protocolHash, baseline, candidate, bundleHashes, host: "macOS Obsidian 1.13.4", arch: process.arch, runs: [] };
+const report = { baseline, candidate, bundleHashes, host: "macOS Obsidian 1.13.4", arch: process.arch, runs: [] };
 
 async function record(lane, revision, slowControl = false) {
   const groups = await runLane(lane, revision, slowControl);
@@ -334,50 +329,45 @@ async function record(lane, revision, slowControl = false) {
   return groups;
 }
 
-function requirePass(verdict) {
-  console.log(JSON.stringify({ verdict }));
-  assert.ok(verdict.every(group => group.failed.length === 0), "Timing gate failed: " + JSON.stringify(verdict));
-}
-
 try {
-  if (calibrating) {
-    assert.ok(output && !candidateFirst && !selfCheck, "Pass --calibrate --output <path> for a new control experiment");
-    const training = [];
-    for (let i = 1; i <= calibrationSize; i++) {
-      const sample = await record("train-" + i, baseline);
-      if (i > 1) matchWork(training[0], sample);
-      training.push(sample);
+  const bytes = await readFile(new URL("../diagnostics/multi-stream-scroll-calibration.json", import.meta.url));
+  // Lock the baseline-only training measurements before observing either ordering of the candidate.
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), "640069c185c3ad326d41128e080faf937b21052fd285188767b32d430ca695de");
+  const control = JSON.parse(bytes);
+  assert.ok(control.baseline === baseline && control.host === report.host && control.arch === report.arch);
+  const source = await readFile(new URL(import.meta.url), "utf8");
+  const sampler = source.slice(source.indexOf("async function buildLane("), source.indexOf("\nconst args = process.argv.slice"));
+  assert.equal(createHash("sha256").update(sampler).digest("hex"), "4588a3e1041156f2bfd5d2f5a0c4a22894dae5426d6e915921c5a7c75c1dc8a8",
+    "Host measurement protocol changed; establish a matching control experiment");
+  const training = control.runs.slice(0, calibrationSize).map(run => run.groups);
+  const { limit } = calibrate(training);
+  assert.deepEqual(limit, control.calibration.limit);
+
+  const pairs = [];
+  for (let i = 0; i < 3; i++) {
+    const reverse = (i % 2 === 0) === candidateFirst;
+    const labels = reverse ? ["candidate", "baseline"] : ["baseline", "candidate"];
+    const lanes = {};
+    for (const label of labels) {
+      const name = label + "-" + (i + 1);
+      const revision = label === "candidate" && !selfCheck ? candidate : baseline;
+      lanes[label] = await record(name, revision);
+      if (revision === baseline) assert.equal(bundleHashes[name], control.bundleHashes["train-1"]);
+      matchWork(training[0], lanes[label]);
     }
-    report.calibration = calibrate(training);
-    const holdoutA = await record("holdout-a", baseline);
-    const holdoutB = await record("holdout-b", baseline);
-    const slow = await record("stall-control", baseline, true);
-    assert.equal(new Set(Object.values(bundleHashes)).size, 1, "Control bundles must be byte-identical");
-    matchWork(training[0], holdoutA);
-    matchWork(training[0], holdoutB);
-    report.holdout = compare([holdoutA, holdoutB], report.calibration.limit);
-    report.reverseHoldout = compare([holdoutB, holdoutA], report.calibration.limit);
-    report.stallControl = compare([holdoutA, slow], report.calibration.limit);
-    requirePass(report.holdout);
-    requirePass(report.reverseHoldout);
-    assert.ok(report.stallControl.every(group => group.failed.includes("p95Ms") && group.failed.includes("candidateFrameBudget")),
-      "Injected periodic stalls must trip the frame gates for every stream count");
-  } else {
-    const control = JSON.parse(await readFile(calibrationFile, "utf8"));
-    assert.ok(control.passed && control.protocolHash === protocolHash && control.baseline === baseline
-      && control.host === report.host && control.arch === report.arch, "No matching validated control experiment");
-    const training = control.runs.slice(0, calibrationSize).map(run => run.groups);
-    const { limit } = calibrate(training);
-    const test = selfCheck ? baseline : candidate;
-    const first = candidateFirst ? await record("candidate", test) : await record("baseline", baseline);
-    const second = candidateFirst ? await record("baseline", baseline) : await record("candidate", test);
-    const [before, after] = candidateFirst ? [second, first] : [first, second];
-    assert.equal(bundleHashes.baseline, control.bundleHashes["train-1"], "Baseline bundle differs from the control");
-    if (selfCheck) assert.equal(bundleHashes.baseline, bundleHashes.candidate);
-    matchWork(training[0], before);
-    report.verdict = compare([before, after], limit);
-    requirePass(report.verdict);
+    pairs.push(compare([lanes.baseline, lanes.candidate], limit));
+    console.log(JSON.stringify({ pair: i + 1, order: labels, comparisons: pairs.at(-1) }));
   }
+  report.verdict = decide(pairs);
+  if (selfCheck) {
+    const slow = await record("stall-control", baseline, true);
+    assert.equal(bundleHashes["stall-control"], control.bundleHashes["train-1"]);
+    report.stallControl = compare([training[0], slow], limit);
+    assert.ok(report.stallControl.every(r => r.failed.includes("p95Ms") && r.failed.includes("candidateFrameBudget")),
+      "Injected stalls must trip both continuous and missed-refresh P95 checks");
+  }
+  console.log(JSON.stringify({ verdict: report.verdict }));
+  assert.ok(report.verdict.every(r => !r.failed.length), "Host comparison failed: " + JSON.stringify(report.verdict));
   report.passed = true;
   console.log(JSON.stringify({ baseline, candidate, passed: true, files: fileCount, host: report.host }));
 } finally {

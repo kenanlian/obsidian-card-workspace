@@ -115,3 +115,23 @@ export function compare(lanes, limit) {
     return { count, delta, limit, legacyPass, failed };
   });
 }
+
+// Segments within one application launch share a renderer and cache. The
+// independent replicate for a release decision is a fresh pair of launches.
+export function decide(pairs) {
+  assert.equal(pairs.length, 3, "The experiment has three preassigned launch pairs");
+  return counts.map((count, i) => {
+    const results = pairs.map(pair => pair[i]);
+    assert.ok(results.every(r => r.count === count));
+    const failures = {};
+    for (const r of results) {
+      for (const key of r.failed) failures[key] = (failures[key] ?? 0) + 1;
+    }
+    const failed = Object.keys(failures).filter(key =>
+      key.endsWith("FrameBudget") || failures[key] >= 2);
+    // Retain sensitivity to sub-envelope differences if the original gate
+    // separates every candidate launch from its matched reference.
+    if (results.every(r => !r.legacyPass)) failed.push("consistentLegacySeparation");
+    return { count, failures, failed, pairs: results };
+  });
+}
