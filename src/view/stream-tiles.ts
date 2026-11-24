@@ -6,7 +6,7 @@ export interface Placement { target: string; side: Side }
 export interface Rect { x: number; y: number; width: number; height: number }
 export interface Region extends Rect { key: string; axis: "x" | "y"; stream?: string }
 export interface Divider extends Rect { id: string; axis: "x" | "y"; position: number; span: number; min: number; max: number }
-export const GAP = 6;
+const DIVIDER_HIT_SIZE = 6;
 export const MIN_WIDTH = 240;
 const MIN_HEIGHT = 160;
 const BAR = 28;
@@ -70,8 +70,8 @@ export function tileGeometry(root: Tile | null, collapsed: Set<string>, width: n
     } else {
       const a = measure(t.first, t.axis), b = measure(t.second, t.axis);
       const horizontal = t.axis === "x";
-      size = { width: horizontal ? a.width + GAP + b.width : Math.max(a.width, b.width),
-        height: horizontal ? Math.max(a.height, b.height) : a.height + GAP + b.height,
+      size = { width: horizontal ? a.width + b.width : Math.max(a.width, b.width),
+        height: horizontal ? Math.max(a.height, b.height) : a.height + b.height,
         fixedX: a.fixedX && b.fixedX, fixedY: a.fixedY && b.fixedY };
     }
     sizes.set(t, size);
@@ -85,18 +85,20 @@ export function tileGeometry(root: Tile | null, collapsed: Set<string>, width: n
     const dimension = axis === "x" ? "width" : "height";
     const fixedDimension = axis === "x" ? "fixedX" : "fixedY";
     const firstSize = sizes.get(first)!, secondSize = sizes.get(second)!;
-    const span = rect[dimension] - GAP;
+    const span = rect[dimension];
     const min = firstSize[dimension], max = span - secondSize[dimension];
     let position = Math.max(min, Math.min(max, Math.round(span * tile.ratio)));
     if (firstSize[fixedDimension]) position = min;
     else if (secondSize[fixedDimension]) position = max;
 
+    const boundary = rect[axis] + position;
     layout(first, { ...rect, [dimension]: position }, axis);
     if (!firstSize[fixedDimension] && !secondSize[fixedDimension]) {
-      dividers.push({ ...rect, [axis]: rect[axis] + position, [dimension]: GAP, axis, id: tile.id, span, position, min, max });
+      dividers.push({ ...rect, [axis]: boundary - DIVIDER_HIT_SIZE / 2, [dimension]: DIVIDER_HIT_SIZE,
+        axis, id: tile.id, span, position, min, max });
     }
     const secondSpan = secondSize[fixedDimension] ? secondSize[dimension] : span - position;
-    layout(second, { ...rect, [axis]: rect[axis] + position + GAP, [dimension]: secondSpan }, axis);
+    layout(second, { ...rect, [axis]: boundary, [dimension]: secondSpan }, axis);
   }
 
   const min = root && measure(root, "x");

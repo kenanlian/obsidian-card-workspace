@@ -19,7 +19,7 @@ New streams start from the source's default arrangement with an empty search and
 
 ## Select, collapse and compare
 
-Clicking or focusing inside a stream makes it the current target. With several streams, the current one has an accent line above its toolbar, and the other titles are muted. Navigation always controls the current stream in that pane. Moving keyboard focus into navigation or another Obsidian pane does not change the target. Choosing a stream from the menu or a command scrolls it into view.
+Clicking or focusing inside a stream makes it the current target. With several streams, the current stream has a lightly tinted drag strip with three accent-colored dots above its toolbar. The other stream titles are muted. Navigation always controls the current stream in that pane. Moving keyboard focus into navigation or another Obsidian pane does not change the target. Choosing a stream from the menu or a command scrolls it into view.
 
 The stream menu lists every stream (a check marks the current one) and offers:
 
@@ -30,7 +30,7 @@ The stream menu lists every stream (a check marks the current one) and offers:
 
 For example, to put A and B above a full-width C, start with A and B side by side. Choose **New stream at…**, select **A + B**, choose **Below**, and select C’s source. If C already exists, use **Move stream to…** from C instead.
 
-Drag an internal separator to change the proportions of that split. A row divider adjusts both columns above it together. Column dividers inside that row adjust only their own columns. The proportions follow the window size. Expanded tiles need at least 240 px of width and 160 px of height. A sidebar can widen to make room, leaving 400 px for the main workspace. When the tiles exceed the available space the stream area scrolls on the affected axis. Each stream has its own card scrollbar. A narrow desktop pane retains the navigation/content switch.
+Adjacent streams meet edge to edge. A thin line marks each shared edge between expanded streams. Hover over the line or focus it with the keyboard to highlight it. Drag the line to resize the split. A row divider adjusts both columns above it together. Column dividers inside that row adjust only their own columns. The proportions follow the window size. Expanded tiles need at least 240 px of width and 160 px of height. A sidebar can widen to make room, leaving 400 px for the main workspace. When the tiles exceed the available space the stream area scrolls on the affected axis. Each stream has its own card scrollbar. A narrow desktop pane retains the navigation/content switch.
 
 All streams may be collapsed or closed. With no current target, choosing a navigation source creates a new stream. Closing or moving the last stream leaves an empty pane offering **New stream…**, **Reopen closed stream**, and the navigation toggle. **Reopen closed stream** restores up to ten recently closed streams in the same session; that history is cleared on restart.
 

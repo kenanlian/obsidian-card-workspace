@@ -1,4 +1,4 @@
-import { GAP, MIN_WIDTH, cloneLayout, moveTile, insert, rewrite, tileKey, tiles, validTiles, type Placement, type Tile } from "./stream-tiles";
+import { MIN_WIDTH, cloneLayout, moveTile, insert, rewrite, tileKey, tiles, validTiles, type Placement, type Tile } from "./stream-tiles";
 import { normalizeGroupSpec } from "../card-grouping-settings";
 import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "../navigation-expansion-settings";
 import { normalizeExpandedPropertyKeys, normalizePropertyFilterClauses } from "../property-filter-settings";
@@ -61,6 +61,9 @@ export interface LeafStreamState {
   revision: number;
   recentlyClosedCount: number;
 }
+
+// V1 stored column widths with a 6px gutter between them.
+const LEGACY_ROW_GAP = 6;
 
 /** One card column: the card minimum width plus list padding. */
 export const STREAM_DEFAULT_WIDTH = 320;
@@ -149,7 +152,7 @@ export class LeafStreamController {
     let total = 0;
     for (const [id, width] of widths) {
       const span = total + width;
-      const gap = root ? GAP : 0;
+      const gap = root ? LEGACY_ROW_GAP : 0;
       root = insert(root, id, { target: root ? tileKey(root) : "", side: "right" }, total / span);
       total = span + gap;
     }
@@ -368,7 +371,7 @@ export class LeafStreamController {
 
 /** Reconstruct V1's expanded row. Unsized columns share space and the last absorbs the remainder. */
 function legacyExpandedWidths(streams: StreamSnapshot[], stageWidth: number): Map<string, number> {
-  const available = stageWidth - (streams.length - 1) * GAP;
+  const available = stageWidth - (streams.length - 1) * LEGACY_ROW_GAP;
   const flexible = streams.filter(stream => stream.width === null).length;
   const fixed = streams.reduce((sum, stream) => sum + (stream.width ?? 0), 0);
   const share = stageWidth > 0 && flexible > 0

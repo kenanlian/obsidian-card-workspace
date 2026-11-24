@@ -415,7 +415,7 @@ describe("desktop leaf stream integration", () => {
     expect(dock.setSize).not.toHaveBeenCalled();
     view.streams.setSize(300, 800);
     view.handleStreamCommand(second, "duplicate");
-    expect(dock.setSize).toHaveBeenLastCalledWith(600 + 3 * 240 + 12 - 300);
+    expect(dock.setSize).toHaveBeenLastCalledWith(600 + 3 * 240 - 300);
     dock.setSize.mockClear(); dock.collapsed = true;
     view.handleStreamCommand(second, "duplicate");
     (view.leaf as unknown as { getRoot: () => unknown }).getRoot = () => ({}); dock.collapsed = false;

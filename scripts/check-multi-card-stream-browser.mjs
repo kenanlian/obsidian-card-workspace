@@ -100,7 +100,22 @@ try {
  assert.equal(await page.locator('.fce-stream-splitter').count(), 2);
  const box = id => page.locator(`[data-stream-id="${id}"]`).boundingBox();
  const one = await box('one'), two = await box('two'), bottom = await box('four');
- assert.equal(one.y,two.y); assert(two.x>one.x); assert(bottom.y>one.y); assert(bottom.width>one.width);
+ assert.equal(one.y, two.y);
+ assert.equal(one.x + one.width, two.x, 'adjacent drag strips meet at the column boundary');
+ assert.equal(one.y + one.height, bottom.y, 'stacked streams meet at the row boundary');
+ assert(bottom.width > one.width);
+ const column = page.locator('.fce-stream-splitter[aria-orientation="vertical"]');
+ const rowDivider = page.locator('.fce-stream-splitter[aria-orientation="horizontal"]');
+ const lineSize = divider => divider.evaluate(node => getComputedStyle(node).backgroundSize);
+ assert.equal(await lineSize(column), '1px 100%');
+ assert.equal(await lineSize(rowDivider), '100% 1px');
+ for (const [x, y, orientation] of [
+  [two.x - 2, two.y + 5, 'vertical'], [two.x + 2, two.y + 5, 'vertical'],
+  [one.x + 50, bottom.y - 2, 'horizontal'], [one.x + 50, bottom.y + 2, 'horizontal'],
+ ]) {
+  const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.getAttribute('aria-orientation'), [x, y]);
+  assert.equal(hit, orientation, 'the separator accepts pointer input on both sides of the boundary');
+ }
  for (const id of ['one','two','four']) {
   const panel = page.locator(`[data-stream-id="${id}"]`);
   assert(await panel.locator('.fce-card').count() > 0);
@@ -156,9 +171,14 @@ try {
  await page.evaluate(() => new Promise(requestAnimationFrame));
  assert.equal((await navLocator.boundingBox()).width, 240);
  // Pointer selection switches the target, keeps viewports mounted, and does not scroll the strip.
+ const gripColor = id => page.locator(`[data-stream-id="${id}"] > .fce-stream-grip`).evaluate(node => getComputedStyle(node).backgroundColor);
+ const currentColor = await gripColor('one'), idleColor = await gripColor('two');
+ assert.notEqual(currentColor, idleColor, 'the current drag strip is highlighted');
  await page.locator('[data-stream-id="one"] .fce-list').evaluate(node => { window.firstViewport = node; node.scrollTop = 300; });
  await page.locator('[data-stream-id="two"] .fce-list').click({ position: { x: 20, y: 200 } });
  assert.equal(await page.locator('[data-stream-id="two"]').getAttribute('aria-current'), 'true');
+ assert.equal(await gripColor('one'), idleColor);
+ assert.equal(await gripColor('two'), currentColor);
  assert(await page.evaluate(() => window.firstViewport === document.querySelector('[data-stream-id="one"] .fce-list') && window.firstViewport.scrollTop > 0));
  await page.locator('[data-stream-id="two"] .fce-stream-switcher').click();
  await page.locator('[data-stream-id="two"] .fce-stream-close').click();
@@ -166,12 +186,14 @@ try {
  assert.deepEqual(await page.evaluate(() => window.events.slice(-3)), [{ id: 'two', command: 'menu' }, { id: 'two', command: 'close' }, { id: 'three', command: 'menu' }]);
  await page.locator('.fce-stream-spine').click();
  assert.deepEqual(await page.evaluate(() => window.events.at(-1)), { command: 'select', id: 'three' });
- const column = page.locator('.fce-stream-splitter[aria-orientation="vertical"]');
  await column.focus(); await page.keyboard.press('ArrowRight');
+ assert.equal(await lineSize(column), '2px 100%');
  assert.equal((await box('one')).width,one.width+16);
  assert.equal((await box('four')).width,bottom.width);
- const row = await page.locator('.fce-stream-splitter[aria-orientation="horizontal"]').boundingBox();
- await page.mouse.move(row.x+100,row.y+3); await page.mouse.down(); await page.mouse.move(row.x+100,row.y+23); await page.mouse.up();
+ const row = await rowDivider.boundingBox();
+ await page.mouse.move(row.x+100,row.y+3);
+ assert.equal(await lineSize(rowDivider), '100% 2px');
+ await page.mouse.down(); await page.mouse.move(row.x+100,row.y+23); await page.mouse.up();
  assert.equal((await box('one')).height,one.height+20);
  // Drag the bottom stream to the edge of the whole stage, preserving the mounted lists.
  const grip = await page.locator('[data-stream-id="four"] > .fce-stream-grip').boundingBox();
@@ -179,10 +201,12 @@ try {
  assert.equal(await page.locator('.fce-stream-grip').count(), 3);
  assert.equal(grip.width, tile.width);
  assert.equal(grip.y, tile.y);
- assert.equal(grip.height, 10);
+ assert.equal(grip.height, 6);
  const dest = await stageLocator.boundingBox();
- await page.mouse.move(grip.x+8,grip.y+grip.height/2); await page.mouse.down();
+ // The fourth pixel below the visible strip still belongs to its drag target.
+ await page.mouse.move(grip.x+8,grip.y+grip.height+3); await page.mouse.down();
  await page.mouse.move(dest.x+dest.width/2,dest.y+dest.height-3,{steps:5});
+ assert.equal(await page.locator('.fce-stream-drop-preview').count(), 1);
  await page.keyboard.press('Escape'); await page.mouse.up();
  assert.equal(await page.locator('.fce-stream-drop-preview').count(),0);
  assert.equal((await box('four')).width,bottom.width);

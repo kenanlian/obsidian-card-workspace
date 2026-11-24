@@ -192,9 +192,9 @@ describe("StreamWorkspacePanel", () => {
   const splitters = target.querySelectorAll<HTMLElement>('[role="separator"].fce-stream-splitter');
   expect(splitters).toHaveLength(2);
   splitters[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
-  expect(onSplitResize).toHaveBeenLastCalledWith("cols", 563/1094);
+  expect(onSplitResize).toHaveBeenLastCalledWith("cols", 566/1100);
   splitters[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", shiftKey: true, bubbles: true }));
-  expect(onSplitResize).toHaveBeenLastCalledWith("rows", 299/694);
+  expect(onSplitResize).toHaveBeenLastCalledWith("rows", 302/700);
  });
  it("reorders by dragging a stream title and swallows the click that ends the drag", async () => {
   const onPlace = vi.fn(), onCommand = vi.fn();

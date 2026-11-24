@@ -55,14 +55,14 @@ describe("LeafStreamController", () => {
     controller.add(stream("b"));
     const row = controller.getState().layout!;
     controller.add(stream("c"), {target:tileKey(row), side:"bottom"});
-    controller.setSize(1006,806);
+    controller.setSize(1000,800);
     const geometry = () => {
       const state = controller.getState();
       return tileGeometry(state.layout, new Set(state.streams.filter(s => !s.desiredExpanded).map(s => s.id)),state.width,state.height);
     };
     const region = (id: string) => geometry().regions.find(r => r.stream === id);
     expect(region("a")).toMatchObject({width:500,height:400});
-    expect(region("c")).toMatchObject({x:0,y:406,width:1006,height:400});
+    expect(region("c")).toMatchObject({x:0,y:400,width:1000,height:400});
     controller.resizeSplit(row.id,0.3);
     expect(region("a")?.width).toBe(300);
     controller.setExpanded("c",false);
@@ -72,10 +72,10 @@ describe("LeafStreamController", () => {
     controller.remove("c"); controller.reopen();
     expect(controller.getState().layout).toEqual(saved.version === 2 && saved.layout);
     controller.place("c",{target:"stream:b",side:"top"});
-    expect(region("a")?.height).toBe(806);
-    expect(region("b")?.y).toBe(406);
+    expect(region("a")?.height).toBe(800);
+    expect(region("b")?.y).toBe(400);
     controller.restore(saved);
-    expect(region("c")?.width).toBe(1006);
+    expect(region("c")?.width).toBe(1000);
     expect(decodeDesktopLeafState(saved,DEFAULT_SETTINGS).kind).toBe("ready");
     expect(decodeDesktopLeafState({...saved, layout:row},DEFAULT_SETTINGS).kind).toBe("unsupported");
   });

@@ -186,9 +186,11 @@
 .folder-card-view .fce-stream-stage { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; position: relative; overflow: auto; overscroll-behavior: contain; }
 .folder-card-view .fce-stream-stage.is-hidden { display: none; }
 .folder-card-view .fce-stream-stage.is-reordering { cursor: grabbing; user-select: none; }
-.folder-card-view .fce-stream-panel { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; scroll-snap-align: start; }
+.folder-card-view .fce-stream-panel { position: relative; isolation: isolate; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; scroll-snap-align: start; }
 .folder-card-view .fce-stream-grip {
-  flex: 0 0 10px;
+  flex: 0 0 6px;
+  position: relative;
+  z-index: 1;
   display: grid;
   place-items: center;
   background: var(--fce-surface);
@@ -205,11 +207,20 @@
   background: currentColor;
   box-shadow: -5px 0 currentColor, 5px 0 currentColor;
 }
+/* Keep the 10px drag target by extending into the toolbar's top padding. */
+.folder-card-view .fce-stream-grip::after {
+  content: "";
+  position: absolute;
+  inset: 100% 0 -4px;
+}
 .folder-card-view .fce-stream-grip:hover { color: var(--fce-text-muted); }
+.folder-card-view .fce-stream-panel.is-current > .fce-stream-grip {
+  background: color-mix(in srgb, var(--fce-accent) 24%, var(--fce-surface));
+  color: var(--fce-accent);
+}
 .folder-card-view .fce-stream-panel.is-dragging .fce-stream-grip { cursor: grabbing; }
 .folder-card-view .fce-stream-panel-content { flex: 1 1 auto; height: 0; min-width: 0; min-height: 0; overflow: hidden; }
 .folder-card-view .fce-stream-panel-content > .fce-shell { height: 100%; min-height: 0; }
-.folder-card-view .fce-stream-stage.has-multiple > .fce-stream-panel.is-current .fce-header { box-shadow: inset 0 2px 0 var(--fce-accent); }
 .folder-card-view .fce-stream-stage.has-multiple > .fce-stream-panel:not(.is-current) .fce-stream-switcher .fce-toolbar-scope-text { color: var(--fce-text-muted); }
 .folder-card-view .fce-stream-switcher { gap: 4px; justify-content: flex-start; height: auto; padding: 2px 4px; border: 0; border-radius: var(--radius-s, 4px); background: transparent; box-shadow: none; color: var(--fce-text); font: inherit; text-align: left; cursor: pointer; }
 .folder-card-view .fce-stream-switcher:hover { background: var(--background-modifier-hover); }
@@ -221,11 +232,22 @@
 .folder-card-view .fce-stream-spine:last-child { border-right: 0; }
 .folder-card-view .fce-stream-spine:hover { background: var(--background-modifier-hover); color: var(--fce-text); }
 .folder-card-view .fce-stream-spine-title { max-height: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; writing-mode: vertical-rl; font-size: var(--font-ui-smaller, 12px); }
-.folder-card-view .fce-stream-splitter { flex: 0 0 6px; background: linear-gradient(var(--fce-border), var(--fce-border)) center / 1px 100% no-repeat; cursor: col-resize; touch-action: none; }
-.folder-card-view .fce-stream-splitter:hover, .folder-card-view .fce-stream-splitter:focus-visible { background-color: var(--fce-accent); background-image: none; outline: none; }
+.folder-card-view .fce-stream-splitter {
+  --fce-stream-divider-size: 1px;
+  z-index: 1;
+  color: color-mix(in srgb, var(--fce-border) 60%, transparent);
+  background: linear-gradient(currentColor, currentColor) center / var(--fce-stream-divider-size) 100% no-repeat;
+  cursor: col-resize;
+  touch-action: none;
+}
+.folder-card-view .fce-stream-splitter:is(:hover, :focus-visible) {
+  --fce-stream-divider-size: 2px;
+  color: var(--fce-accent);
+  outline: none;
+}
 .folder-card-view :is(.fce-stream-panel, .fce-stream-spine).is-dragging { opacity: 0.55; }
 .folder-card-view .fce-stream-stage > :is(.fce-stream-panel, .fce-stream-spine, .fce-stream-splitter, .fce-stream-drop-target, .fce-stream-drop-preview) { position: absolute; box-sizing: border-box; }
-.folder-card-view .fce-stream-splitter[aria-orientation="horizontal"] { cursor: row-resize; background-size: 100% 1px; }
+.folder-card-view .fce-stream-splitter[aria-orientation="horizontal"] { cursor: row-resize; background-size: 100% var(--fce-stream-divider-size); }
 .folder-card-view .fce-stream-spine.is-horizontal { align-items: center; justify-content: flex-start; padding: 0 10px; border: 0; border-bottom: 1px solid var(--fce-border); }
 .folder-card-view .fce-stream-spine.is-horizontal .fce-stream-spine-title { writing-mode: horizontal-tb; }
 .folder-card-view .fce-stream-drop-target { pointer-events: none; z-index: 2; outline: 1px dashed var(--fce-accent); outline-offset: -1px; }
