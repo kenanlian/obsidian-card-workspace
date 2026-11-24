@@ -201,24 +201,27 @@
         {#if !showSources}<button type="button" onclick={onToggleNav}>{labels.toggleNavigation}</button>{/if}
       </div>
     {/if}
-    {#each items as entry (entry.id)}
+    {#each items as entry, index (entry.id)}
+      {@const titleId = `${instanceId}-stream-title-${index}`}
       {#if entry.display === "spine"}
         <button type="button" class="fce-stream-spine" class:is-horizontal={byStream.get(entry.id)?.axis === "y"}  class:is-dragging={draggingId === entry.id}
-          data-stream-item={entry.id} style={bounds(byStream.get(entry.id))} aria-label={`${labels.expand}: ${entry.title}`} title={entry.title}
+          data-stream-item={entry.id} style={bounds(byStream.get(entry.id))}
           onclick={() => onSelect?.(entry.id)} onpointerdown={event => startReorder(event, entry.id)}
           oncontextmenu={event => { event.preventDefault(); onCommand?.(entry.id, "menu", event.currentTarget); }}>
+          <span class="fce-sr-only">{labels.expand}: </span>
           <span class="fce-stream-spine-title">{entry.title}</span>
         </button>
       {:else}
         <section class="fce-stream-panel" class:is-current={entry.current}  class:is-dragging={draggingId === entry.id}
-          data-stream-id={entry.id} data-stream-item={entry.id} aria-label={entry.title} aria-current={multiple && entry.current ? "true" : undefined} style={bounds(byStream.get(entry.id))}
+          data-stream-id={entry.id} data-stream-item={entry.id} aria-labelledby={titleId} aria-current={multiple && entry.current ? "true" : undefined} style={bounds(byStream.get(entry.id))}
           onpointerdown={event => { selectLocally(entry); startReorder(event, entry.id); }} onfocusin={() => selectLocally(entry)}>
+          <span id={titleId} hidden>{entry.title}</span>
           {#if multiple}
             <div class="fce-stream-grip" aria-hidden="true" title={labels.dragStream}></div>
           {/if}
           {#if !entry.panelModel}
             <div class="fce-stream-fallback-bar">
-              <button type="button" class="fce-stream-switcher" aria-haspopup="menu" onclick={event => onCommand?.(entry.id, "menu", event.currentTarget)}>{entry.title}</button>
+              <button type="button" class="fce-stream-switcher" aria-haspopup="menu" title={entry.title} onclick={event => onCommand?.(entry.id, "menu", event.currentTarget)}>{entry.title}</button>
               <button type="button" class="clickable-icon" aria-label={labels.close} title={labels.close} onclick={() => onCommand?.(entry.id, "close")}>×</button>
             </div>
           {/if}

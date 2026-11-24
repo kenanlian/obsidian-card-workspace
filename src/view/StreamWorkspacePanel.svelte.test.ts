@@ -153,15 +153,20 @@ describe("StreamWorkspacePanel", () => {
   target.querySelector<HTMLButtonElement>('[data-stream-id="two"] .fce-stream-close')!.click();
   expect(onCommand).toHaveBeenLastCalledWith("two", "close");
   const spine = target.querySelector<HTMLButtonElement>(".fce-stream-spine")!;
-  expect(spine.getAttribute("aria-label")).toBe(`${state.labels.expand}: three`);
+  expect(spine.matches("[aria-label], [title], [data-tooltip]")).toBe(false);
+  expect(spine.textContent?.replace(/\s+/g, " ").trim()).toBe(`${state.labels.expand}: three`);
   spine.click(); expect(onSelect).toHaveBeenLastCalledWith("three");
   spine.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
   expect(onCommand).toHaveBeenLastCalledWith("three", "menu", spine);
  });
  it("shows a custom or numbered title in the toolbar and only offers close with several streams", async () => {
   const state = createWorkspace();
-  state.entries = [entry("one", 0, { customTitle: "Reading" })];
+  state.entries = [entry("one", 0, { title: "Reading", customTitle: "Reading" })];
   const model = createStreamPanelModel(state); const target = await render({ model });
+  const panel = target.querySelector(".fce-stream-panel")!;
+  expect(panel.querySelector(".fce-list")!.closest("[aria-label], [title], [data-tooltip]")).toBeNull();
+  expect(document.getElementById(panel.getAttribute("aria-labelledby")!)?.textContent).toBe("Reading");
+  expect(panel.querySelector(".fce-stream-switcher")?.getAttribute("data-tooltip")).toContain("Reading");
   expect(target.querySelector(".fce-stream-switcher .fce-toolbar-scope-text")?.textContent).toBe("Reading");
   expect(target.querySelector(".fce-stream-close")).toBeNull();
   expect(target.querySelector(".fce-stream-grip")).toBeNull();
@@ -179,7 +184,9 @@ describe("StreamWorkspacePanel", () => {
   expect((panel.querySelector(".fce-stream-panel-content") as HTMLElement & { inert: boolean }).inert).toBe(true);
   expect(panel.querySelector(".fce-stream-fallback-bar")?.closest("[inert]")).toBeNull();
   expect(panel.querySelector('[role="alert"]')?.textContent).toBe("Failed");
-  panel.querySelector<HTMLButtonElement>(".fce-stream-fallback-bar .fce-stream-switcher")!.click();
+  const switcher = panel.querySelector<HTMLButtonElement>(".fce-stream-fallback-bar .fce-stream-switcher")!;
+  expect(switcher.title).toBe("two");
+  switcher.click();
   expect(onCommand).toHaveBeenLastCalledWith("two", "menu", expect.any(HTMLElement));
   panel.querySelector<HTMLButtonElement>(`.fce-stream-fallback-bar button[aria-label="${workspace.labels.close}"]`)!.click();
   expect(onCommand).toHaveBeenLastCalledWith("two", "close");
