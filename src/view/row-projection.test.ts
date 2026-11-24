@@ -106,7 +106,7 @@ describe("projectPanelRows", () => {
         index: row.index,
         startIndex: row.startIndex,
         endIndex: row.endIndex,
-        cards: row.cards,
+        paths: row.cards.map(card => card.path),
         key: row.key,
         segmentIndex: -1,
       })),
@@ -114,7 +114,7 @@ describe("projectPanelRows", () => {
     expect(rows.every((row) => row.segmentIndex === -1)).toBe(true);
   });
 
-  it("retains the original card records in flat and grouped rows", () => {
+  it("retains path identities independently of preview records in flat and grouped rows", () => {
     const cards = createCards(8).map((card) => ({ ...card, title: `Title ${card.path}` }));
     const flatRows = projectPanelRows(cards, [], 3);
     const groupedRows = projectPanelRows(
@@ -126,25 +126,16 @@ describe("projectPanelRows", () => {
     for (const row of [...flatRows, ...groupedRows]) {
       if (row.kind !== "cards") continue;
       for (let index = row.startIndex; index < row.endIndex; index += 1) {
-        expect(row.cards[index - row.startIndex]).toBe(cards[index]);
+        expect(row.paths[index - row.startIndex]).toBe(cards[index].path);
       }
     }
   });
 
-  it("slices only per-row card windows instead of copying whole group segments", () => {
-    const source = createCards(8);
-    const slices: Array<[number | undefined, number | undefined]> = [];
-    const cards = new Proxy(source, {
-      get(target, property, receiver) {
-        if (property === "slice") {
-          return (start?: number, end?: number) => {
-            slices.push([start, end]);
-            return Array.prototype.slice.call(target, start, end);
-          };
-        }
-        return Reflect.get(target, property, receiver);
-      },
-    });
+  it("reads each projected path once across row and group boundaries", () => {
+    const reads: number[] = [];
+    const cards = createCards(8).map((card, index) => ({
+      get path() { reads.push(index); return card.path; },
+    }));
 
     const rows = projectPanelRows(
       cards,
@@ -152,8 +143,8 @@ describe("projectPanelRows", () => {
       3,
     );
 
-    expect(slices).toEqual([[0, 3], [3, 5], [5, 8]]);
-    expect(rows.filter((row) => row.kind === "cards")).toHaveLength(slices.length);
+    expect(reads).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(rows.filter((row) => row.kind === "cards")).toHaveLength(3);
   });
 
   it("numbers mixed rows globally across segments and their partial tail rows", () => {
@@ -184,7 +175,7 @@ describe("projectPanelRows", () => {
       3,
     );
 
-    expect(rows[4].kind === "cards" && rows[4].cards.map((card) => card.path)).toEqual([
+    expect(rows[4].kind === "cards" && rows[4].paths).toEqual([
       "notes/5.md",
       "notes/6.md",
       "notes/7.md",
@@ -205,9 +196,9 @@ describe("projectPanelRows", () => {
   it("clamps a segment that overruns the published card array", () => {
     const rows = projectPanelRows(createCards(2), [createSegment("a", 0, 5)], 3);
 
-    expect(rows[1].kind === "cards" && rows[1].cards).toEqual([
-      { path: "notes/0.md" },
-      { path: "notes/1.md" },
+    expect(rows[1].kind === "cards" && rows[1].paths).toEqual([
+      "notes/0.md",
+      "notes/1.md",
     ]);
     expect(rows[1]).toMatchObject({ startIndex: 0, endIndex: 2 });
   });

@@ -29,14 +29,15 @@ export interface RowSegment {
  * and indexes the row-position table, while the card offsets address the whole
  * post-collapse card array.
  */
-export type PanelRow<T extends RowProjectionCard = RowProjectionCard> =
+export type PanelRow =
   | { kind: "group-header"; index: number; key: string; segmentIndex: number }
   | {
       kind: "cards";
       index: number;
       startIndex: number;
       endIndex: number;
-      cards: T[];
+      /** Anchors refer to the old layout while the host replaces card content. */
+      paths: string[];
       key: string;
       segmentIndex: number;
       groupKey?: string;
@@ -110,20 +111,20 @@ export function projectCardsToRows<T extends RowProjectionCard>(
       startIndex,
       endIndex: startIndex + rowCards.length,
       cards: rowCards,
-      key: buildRowKey(cards, startIndex, startIndex + rowCards.length, safeColumnCount),
+      key: buildRowKey(rowCards.map(card => card.path), safeColumnCount),
     });
   }
 
   return rows;
 }
 
-export function projectPanelRows<T extends RowProjectionCard>(
-  cards: readonly T[],
+export function projectPanelRows(
+  cards: readonly RowProjectionCard[],
   segments: readonly RowSegment[],
   columnCount: number,
-): PanelRow<T>[] {
+): PanelRow[] {
   const safeColumnCount = Math.max(1, Math.trunc(columnCount) || 1);
-  const rows: PanelRow<T>[] = [];
+  const rows: PanelRow[] = [];
 
   if (segments.length === 0) {
     appendPanelCardRows(rows, cards, 0, cards.length, safeColumnCount, -1);
@@ -151,9 +152,9 @@ export function projectPanelRows<T extends RowProjectionCard>(
   return rows;
 }
 
-function appendPanelCardRows<T extends RowProjectionCard>(
-  rows: PanelRow<T>[],
-  cards: readonly T[],
+function appendPanelCardRows(
+  rows: PanelRow[],
+  cards: readonly RowProjectionCard[],
   start: number,
   end: number,
   columnCount: number,
@@ -162,31 +163,24 @@ function appendPanelCardRows<T extends RowProjectionCard>(
 ): void {
   for (let startIndex = start; startIndex < end; startIndex += columnCount) {
     const endIndex = Math.min(end, startIndex + columnCount);
+    const paths: string[] = [];
+    for (let index = startIndex; index < endIndex; index++) paths.push(cards[index].path);
+    const key = buildRowKey(paths, columnCount);
     rows.push({
       kind: "cards",
       index: rows.length,
       startIndex,
       endIndex,
-      cards: cards.slice(startIndex, endIndex),
-      key: groupKey === undefined ? buildRowKey(cards, startIndex, endIndex, columnCount) : JSON.stringify([groupKey, buildRowKey(cards, startIndex, endIndex, columnCount)]),
+      paths,
+      key: groupKey === undefined ? key : JSON.stringify([groupKey, key]),
       ...(groupKey === undefined ? {} : { groupKey }),
       segmentIndex,
     });
   }
 }
 
-function buildRowKey<T extends RowProjectionCard>(
-  cards: readonly T[],
-  startIndex: number,
-  endIndex: number,
-  columnCount: number,
-): string {
-  let key = `${columnCount}:`;
-  for (let index = startIndex; index < endIndex; index += 1) {
-    if (index > startIndex) key += "\u001f";
-    key += cards[index]?.path ?? "";
-  }
-  return key;
+function buildRowKey(paths: readonly string[], columnCount: number): string {
+  return `${columnCount}:${paths.join("\u001f")}`;
 }
 
 function clampCardOffset(value: number, cardCount: number): number {
@@ -244,8 +238,8 @@ export function getHydrateRangeForRows<T extends RowProjectionCard>(
   };
 }
 
-export function getHydrateRangeForPanelRows<T extends RowProjectionCard>(
-  rows: readonly PanelRow<T>[],
+export function getHydrateRangeForPanelRows(
+  rows: readonly PanelRow[],
   startRowIndex: number,
   endRowIndex: number,
 ): { start: number; end: number } {

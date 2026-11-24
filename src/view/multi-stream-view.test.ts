@@ -46,6 +46,64 @@ function targetLeaf(source: Awaited<ReturnType<typeof setup>>) {
 }
 
 describe("desktop leaf stream integration", () => {
+  it.each([1, 2, 4])("measures leaf work for one content update per stream with %i streams", async count => {
+    const { view } = await setup();
+    for (let index = 1; index < count; index++) await view.createStream({ scope: createFolderScope("notes", true) });
+    const materialized = (view as unknown as { runtimes: Map<string, { runtime: CardStreamRuntime }> }).runtimes;
+    const runtimes = view.streamPanelModel.getState().entries.map(entry => materialized.get(entry.id)!.runtime);
+    const models = runtimes.map(runtime => runtime.panelModel);
+    expect(models).toHaveLength(count);
+    expect(models.every(model => model.getState().cards.records.length === 1)).toBe(true);
+
+    const reads = vi.spyOn(view.streams, "getState");
+    const singleRead = "getStream" in view.streams ? vi.spyOn(view.streams, "getStream") : null;
+    const publish = vi.spyOn(view.streamPanelModel, "setState");
+    const save = vi.spyOn(view as unknown as { requestSave(): void }, "requestSave");
+    for (const [index, runtime] of runtimes.entries()) {
+      const path = runtime.store.getVisibleCards()[0]!.path;
+      runtime.store.patchCardPreviews([{ path, patch: { excerpt: `ready ${index}`, hydrated: true } }]);
+      runtime.context.publishGroups("cards");
+    }
+    // Each getState result owns a deep copy of every returned stream. Count those
+    // actual returned snapshots, matching the baseline's full-state read metric.
+    const snapshotCopies = reads.mock.results.reduce((sum, result) => sum + (result.type === "return" ? result.value.streams.length : 0), 0);
+    const counts = { snapshotCopies, singleReads: singleRead?.mock.calls.length ?? 0,
+      layoutPublishes: publish.mock.calls.length, saveRequests: save.mock.calls.length };
+    const baseline = process.env.CARD_STREAM_COUNT_FIXTURE === "030bc84";
+    if (process.env.CARD_STREAM_COUNT_FIXTURE) console.info("Stream count fixture", count, counts);
+    expect(counts).toEqual({ snapshotCopies: baseline ? 3 * count * count : 0, singleReads: 0,
+      layoutPublishes: baseline ? count : 0, saveRequests: baseline ? count : 0 });
+    expect(models.map(model => model.getState().cards.records[0]?.excerpt)).toEqual(models.map((_, index) => `ready ${index}`));
+  });
+
+  it("saves a settled reading position without refreshing tiles and captures the latest offset on immediate close", async () => {
+    const { view, app, file } = await setup();
+    const first = view.streams.getState().currentStreamId!;
+    const id = (await view.createStream({ scope: createFolderScope("notes", true) }))!;
+    const { props } = view.streamPanelModel.getState().entries.find(entry => entry.id === id)!;
+    const notifyPosition = props.onReadingPositionChange as () => void;
+    let offset = 17;
+    const ref = { kind: "card" as const, path: file.path };
+    view.registerReadingPosition({ capture: () => ({ ref, offset }), restore: vi.fn() });
+    // Wait for the open/layout save to reach the workspace before recording scroll work.
+    await vi.waitFor(() => expect(app.workspace.requestSaveLayout).toHaveBeenCalled());
+    app.workspace.requestSaveLayout.mockClear();
+    const tiles = vi.spyOn(view.streamPanelModel, "setState");
+    notifyPosition();
+    await vi.waitFor(() => expect(app.workspace.requestSaveLayout).toHaveBeenCalledTimes(1));
+    expect(stream(view, id).anchor).toEqual({ ref, offset });
+    expect(stream(view, first).anchor).toBeNull();
+    expect(tiles).not.toHaveBeenCalled();
+
+    offset = 31;
+    view.handleStreamCommand(id, "close");
+    view.reopenStream();
+    await view.waitForForeground();
+    const restore = vi.fn();
+    view.registerReadingPosition({ capture: () => null, restore });
+    expect(restore).toHaveBeenCalledWith({ ref, offset: 31 }, "folder:notes:true");
+  });
+
   it("loads a deferred legacy leaf from settings when the host restores it after startup", async () => {
     const source = await setup(); const { target } = targetLeaf(source);
     let release!: () => void;
@@ -101,6 +159,33 @@ describe("desktop leaf stream integration", () => {
     expect(plugin.selectFolderByPath).not.toHaveBeenCalled();
   });
 
+  it("retains live search, filters, sort and collapsed groups through workspace restoration", async () => {
+    const source = await setup();
+    const { view } = source;
+    const id = view.streams.getState().currentStreamId!;
+    const tiles = vi.spyOn(view.streamPanelModel, "setState");
+    const { props } = view.streamPanelModel.getState().entries[0]!;
+    (props.onSearchOpenChange as (open: boolean) => void)(true);
+    await view.modules.arrangementActions.onGroupChange({ dimension: "folder" });
+    const group = view.panelModel.getState().cards.groupSegments[0]!;
+    view.modules.arrangementActions.onGroupCollapseCommand({ command: "toggle", key: group.key });
+    await view.modules.arrangementActions.onSortChange({ field: "name", direction: "asc" });
+    await view.modules.tagActions.applyTagFilter(["research"], false);
+    view.modules.search.onQueryChange({ query: "needle" });
+    const latest = stream(view, id);
+    expect(latest).toMatchObject({ query: "needle", searchOpen: true, browse: {
+      sort: { field: "name", direction: "asc" }, filter: { tags: ["research"] }, group: { dimension: "folder" },
+    } });
+    expect(Object.values(latest.collapsedGroups)).toContainEqual([group.key]);
+    expect(tiles).not.toHaveBeenCalled();
+    const saved = view.getState();
+    const { target } = targetLeaf(source);
+    await target.onOpen();
+    await target.setState(saved, { history: false });
+    expect(stream(target, id)).toEqual(latest);
+    expect(target.modules.search.getQuery()).toBe("needle");
+  });
+
   it("releases collapsed runtimes and restores query, selection and anchors on expansion", async () => {
     const { view, file } = await setup(); const first = view.streams.getState().currentStreamId!;
     const anchor = { ref: { kind: "card" as const, path: file.path }, offset: 19 };
@@ -146,11 +231,16 @@ describe("desktop leaf stream integration", () => {
   it("moves only after a usable target exists and does not resurrect the source on restore", async () => {
     const source = await setup(); const id = source.view.streams.getState().currentStreamId!;
     source.view.modules.bulk.toggleBulkMode(); source.view.modules.bulk.bulkSelectAll();
+    const anchor = { ref: { kind: "card" as const, path: source.file.path }, offset: 13 };
+    source.view.registerReadingPosition({ capture: () => anchor, restore: vi.fn() });
     const { target } = targetLeaf(source);
     expect(await source.view.transferStream(id)).toBe(true);
     expect(source.view.streams.getState().streams).toHaveLength(0);
     expect(target.streams.getState().streams.map(value => value.id)).toEqual([id]);
     expect(target.modules.bulk.getSelectedPaths().has(source.file.path)).toBe(true);
+    const restore = vi.fn();
+    target.registerReadingPosition({ capture: () => null, restore });
+    expect(restore).toHaveBeenCalledWith(anchor, "folder:notes:true");
     await source.view.setState(source.view.getState(), { history: false });
     expect(source.view.streams.getState().streams).toHaveLength(0);
   });
@@ -159,11 +249,16 @@ describe("desktop leaf stream integration", () => {
     const source = await setup(); const id = source.view.streams.getState().currentStreamId!;
     source.view.modules.bulk.toggleBulkMode(); source.view.modules.bulk.bulkSelectAll();
     source.view.modules.cardDropActions.begin([source.file.path]);
+    const anchor = { ref: { kind: "card" as const, path: source.file.path }, offset: 26 };
+    source.view.registerReadingPosition({ capture: () => anchor, restore: vi.fn() });
     const { target } = targetLeaf(source);
     expect(await source.view.transferStream(id, true)).toBe(true);
     expect(source.view.streams.getState().streams.some(value => value.id === id)).toBe(true);
     expect(target.streams.getState().currentStreamId).not.toBe(id);
     expect(target.modules.bulk.getSelectedPaths().size).toBe(0);
+    const restore = vi.fn();
+    target.registerReadingPosition({ capture: () => null, restore });
+    expect(restore).toHaveBeenCalledWith(anchor, "folder:notes:true");
     expect(source.view.modules.bulk.getSelectedPaths().has(source.file.path)).toBe(true);
     expect(await source.view.modules.cardDropActions.drop({ kind: "folder", path: "" }, [source.file.path])).toBeNull();
     expect(source.app.fileManager.renameFile).not.toHaveBeenCalled();

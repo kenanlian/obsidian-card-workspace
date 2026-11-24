@@ -240,6 +240,7 @@ export class SearchController implements DisposableController {
     }
 
     this.query = nextQuery;
+    this.context.onBrowseChange?.();
     this.inputRevision += 1;
     this.requestEpoch.bump();
     this.status = this.deriveStatus();
@@ -322,7 +323,9 @@ export class SearchController implements DisposableController {
     if (this.query.trim() || this.committedQuery.trim()) this.invalidateSearchPreviews();
     this.clearDebounce();
     this.requestEpoch.bump();
+    const changed = this.query !== "";
     this.query = "";
+    if (changed) this.context.onBrowseChange?.();
     this.inputRevision += 1;
     this.endedInputRevision = this.inputRevision;
     this.status = this.deriveStatus();

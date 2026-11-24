@@ -18,7 +18,10 @@
   }
   let { model, onSelect, onCommand, onCreate, onReopen, onResize, onSplitResize, onPlace, onToggleNav }: Props = $props();
   let workspace = $state.raw<StreamPanelState>(untrack(() => model.getState()));
-  let navState = $state.raw<PanelModelState | null>(null);
+  type NavigationState = Pick<PanelModelState, "nav" | "strings" | "scope">
+    & Pick<PanelModelState["projection"], "viewMode" | "activeFilterTags">
+    & Pick<PanelModelState["appearance"], "uiFontSize" | "uiDensity">;
+  let navState = $state.raw<NavigationState | null>(null);
   const labels = $derived(workspace.labels);
   const navigationModel = $derived(workspace.navPanelModel);
   const items = $derived(workspace.entries.filter(entry => entry.display !== "hidden"));
@@ -36,8 +39,15 @@
   });
   $effect(() => {
     const navModel = navigationModel;
-    navState = untrack(() => navModel?.getState() ?? null);
-    return untrack(() => navModel?.subscribe(next => { navState = next; }));
+    if (!navModel) { navState = null; return; }
+    return untrack(() => navModel.subscribe(({ nav, strings, scope, projection, appearance }) => {
+      const { viewMode, activeFilterTags } = projection;
+      const { uiFontSize, uiDensity } = appearance;
+      if (navState?.nav === nav && navState.strings === strings && navState.scope === scope
+        && navState.viewMode === viewMode && navState.activeFilterTags === activeFilterTags
+        && navState.uiFontSize === uiFontSize && navState.uiDensity === uiDensity) return;
+      navState = { nav, strings, scope, viewMode, activeFilterTags, uiFontSize, uiDensity };
+    }));
   });
   function measureRoot(node: HTMLDivElement) {
     const report = () => untrack(() => (workspace.navProps.onShellResize as ((width: number) => void) | undefined)?.(node.clientWidth));
@@ -186,8 +196,8 @@
 
 <div class="fce-stream-workspace" class:is-single={single} class:is-source-visible={showSources} use:measureRoot>
   {#if showSources && navState}
-    <div class="fce-stream-navigation fce-shell" data-fce-font-size={navState.appearance.uiFontSize ?? "default"} data-fce-density={navState.appearance.uiDensity ?? "default"}>
-      <NavigationPane {...workspace.navProps} strings={navState.strings} nav={{ ...navState.nav, visible: true }} scope={navState.scope} viewMode={navState.projection.viewMode} activeFilterTags={navState.projection.activeFilterTags} />
+    <div class="fce-stream-navigation fce-shell" data-fce-font-size={navState.uiFontSize ?? "default"} data-fce-density={navState.uiDensity ?? "default"}>
+      <NavigationPane {...workspace.navProps} strings={navState.strings} nav={{ ...navState.nav, visible: true }} scope={navState.scope} viewMode={navState.viewMode} activeFilterTags={navState.activeFilterTags} />
     </div>
   {/if}
   <div class="fce-stream-stage" class:is-hidden={!showStage} class:has-multiple={multiple} class:is-reordering={draggingId !== null} bind:this={stageEl} use:measureStage onclickcapture={swallowDragClick}>

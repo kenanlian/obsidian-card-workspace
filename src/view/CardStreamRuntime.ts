@@ -22,7 +22,7 @@ import { resolveSourceCapabilities } from "./source-capabilities";
 import { buildBrowseFilterChips, buildBrowseFilterRemovalPatch, type BrowseFilterTarget } from "./browse-filters";
 import type { ViewUpdateIntent } from "./update-intent";
 import { createStreamBrowseState, getBrowseFilter, getBrowseIncludeSubfolders, getStreamViewConfig, type StreamBrowseState } from "./stream-browse-state";
-import type { StreamSnapshot } from "./stream-state";
+import type { StreamSnapshot, StreamBrowsingSnapshot } from "./stream-state";
 import type { NavLayoutController } from "./controllers/NavLayoutController";
 import type { LeafPreviewResources } from "./leaf-preview-resources";
 import type { App } from "obsidian";
@@ -32,7 +32,7 @@ export interface StreamRuntimeOptions {
   snapshot?: StreamSnapshot;
   navLayout?: NavLayoutController;
   previewResources?: LeafPreviewResources;
-  onChange?: () => void;
+  onBrowseChange?: () => void;
   onToggleNav?: () => void;
   appendStreamMenu?: (menu: Menu, payload: NavContextMenuPayload) => boolean;
   isCurrent?: () => boolean;
@@ -130,10 +130,11 @@ export class CardStreamRuntime implements HoverParent {
       getApp: () => this.app, store: this.store, epochs: this.epochs,
       ...(options.snapshot ? { browse: {
         get: () => this.browseState!,
-        update: (patch: Partial<StreamBrowseState>) => { this.browseState = { ...this.browseState!, ...patch }; options.onChange?.(); },
-        reset: (scope: CardScope) => { this.browseState = { ...createStreamBrowseState(scope, this.plugin.getSettings()), filter: this.browseState!.filter }; options.onChange?.(); },
+        update: (patch: Partial<StreamBrowseState>) => { this.browseState = { ...this.browseState!, ...patch }; options.onBrowseChange?.(); },
+        reset: (scope: CardScope) => { this.browseState = { ...createStreamBrowseState(scope, this.plugin.getSettings()), filter: this.browseState!.filter }; },
       } } : {}),
-      onMissingScope: () => { this.missing = true; this.publishGroups("scope", "cards"); options.onChange?.(); },
+      onBrowseChange: options.onBrowseChange,
+      onMissingScope: () => { this.missing = true; this.publishGroups("scope", "cards"); options.onBrowseChange?.(); },
       getSettings: () => this.plugin.getSettings(), saveSettings: (patch, options) => this.saveViewSettings(patch, options),
       getUiStrings: () => this.plugin.getUiStrings(), publishGroups: (...groups) => this.publishGroups(...groups),
       requestUpdate: (intent, reason) => this.applyUpdateIntent(intent, reason),
@@ -183,12 +184,15 @@ export class CardStreamRuntime implements HoverParent {
           if (anchor) { this.historyAnchors.set(scopeIdentity(this.cardScope), anchor); if (this.historyAnchors.size > 32) this.historyAnchors.delete(this.historyAnchors.keys().next().value!); }
         }
         publishLoadStart(this.buildLoadBoundaryHost(), scopeChanged);
+        // Failed preparation restores the previous complete scope through this boundary.
+        if (this.modules.scopeController.isScopeSettled()) options.onBrowseChange?.();
       },
       publishPreparedCards: (fileTypesChanged) => this.panelModel.batch(() => {
         this.missing = false;
         this.recordedScope ??= this.cardScope;
         if (fileTypesChanged) this.publishGroups("nav");
         publishPreparedCards(this.buildLoadBoundaryHost());
+        options.onBrowseChange?.();
       }),
       publishSettledScope: () => publishSettledScope(this.buildLoadBoundaryHost()),
       publishGroups: (...groups) => this.publishGroups(...groups),
@@ -254,7 +258,8 @@ export class CardStreamRuntime implements HoverParent {
         this.stopActivity?.(); this.stopActivity = null;
         if (element) this.stopActivity = this.plugin.runtimeActivity?.observeRegion(element, this.workGate) ?? null;
       },
-      onSearchOpenChange: (open: boolean) => { if (this.searchOpen === open) return; this.searchOpen = open; this.options.onChange?.(); },
+      onReadingPositionChange: this.options.onBrowseChange,
+      onSearchOpenChange: (open: boolean) => { if (this.searchOpen === open) return; this.searchOpen = open; this.options.onBrowseChange?.(); },
       onShellResize: () => {}, onToggleNavPane: this.options.onToggleNav ?? (() => {}),
     };
   }
@@ -272,13 +277,13 @@ export class CardStreamRuntime implements HoverParent {
     await this.modules.search.refreshProjection();
     if (!this.workGate.isClosed) this.restoreReadingAnchor();
   }
-  captureSnapshot(base: StreamSnapshot): StreamSnapshot {
-    const anchor = this.readingPosition?.capture() ?? this.pendingAnchor;
+  captureBrowsing(base: StreamSnapshot): StreamBrowsingSnapshot {
+    const anchor = this.pendingAnchor ?? this.readingPosition?.capture() ?? null;
     const records = this.modules.projection.getStreamMode() === "tasks" ? this.store.getVisibleTaskCards() : this.store.getVisibleCards();
     const index = anchor?.ref.kind === "card" ? records.findIndex(record => record.path === (anchor.ref as { path: string }).path) : -1;
     const anchorIndex = anchor?.ref.kind === "card-index" ? anchor.ref.index : index >= 0 ? index : base.anchorIndex;
     this.pendingAnchorIndex = anchorIndex;
-    return { ...base, scope: this.cardScope, browse: this.browseState ?? base.browse,
+    return { scope: this.cardScope, browse: this.browseState ?? base.browse,
       query: this.modules.search.getQuery(), searchOpen: this.searchOpen,
       linksPinned: this.store.getLinksPinned(), taskFilters: this.store.getTaskFilters(),
       collapsedGroups: this.modules.groupCollapse.snapshot(), anchor, anchorIndex,

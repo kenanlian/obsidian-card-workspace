@@ -144,6 +144,27 @@ describe("StreamWorkspacePanel", () => {
   expect(target.querySelector('[data-stream-id="one"] .fce-list')).toBe(first);
   expect(target.querySelector('[data-stream-id="two"]')!.getAttribute("aria-current")).toBe("true");
  });
+ it("keeps the shared navigation bound to its rendered groups and current stream", async () => {
+  const state = createWorkspace();
+  const first = state.entries[0].panelModel!, second = state.entries[1].panelModel!;
+  const readWidth = vi.fn(() => 240);
+  first.mutate(draft => { draft.nav = { ...draft.nav, get paneWidth() { return readWidth(); } }; });
+  const model = createStreamPanelModel(state);
+  const target = await render({ model });
+  expect(readWidth).toHaveBeenCalled();
+  readWidth.mockClear();
+  first.mutate(draft => { draft.cards = { ...draft.cards, hydrationRevision: 1 }; });
+  await tick();
+  expect(readWidth).not.toHaveBeenCalled();
+
+  second.mutate(draft => { draft.appearance = { ...draft.appearance, uiDensity: "compact" }; });
+  model.setState({ ...state, currentStreamId: "two", navPanelModel: second });
+  await tick();
+  expect(target.querySelector(".fce-stream-navigation")?.getAttribute("data-fce-density")).toBe("compact");
+  first.mutate(draft => { draft.nav = { ...draft.nav, visible: false }; });
+  await tick();
+  expect(target.querySelector(".fce-stream-navigation")?.getAttribute("data-fce-density")).toBe("compact");
+ });
  it("routes the toolbar switcher, close button and collapsed spine to host intents", async () => {
   const state = createWorkspace(); state.entries = state.entries.map((value, index) => index === 2 ? { ...value, display: "spine", width: 28, separator: false, panelModel: null } : value);
   const model = createStreamPanelModel(state), onCommand = vi.fn(), onSelect = vi.fn();

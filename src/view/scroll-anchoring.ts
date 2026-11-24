@@ -17,7 +17,7 @@ export interface AnchorCandidateRow {
   readonly kind: "group-header" | "cards";
   readonly key: string;
   readonly groupKey?: string;
-  readonly cards?: readonly { readonly path: string }[];
+  readonly paths?: readonly string[];
   readonly startIndex?: number;
   readonly endIndex?: number;
 }
@@ -151,13 +151,13 @@ export function resolveAnchoredScrollTop(input: {
 }
 
 function buildRowAnchorRef(row: AnchorCandidateRow, preferCardIndex: boolean): RowAnchorRef {
-  const firstCard = row.cards?.[0];
-  if (!firstCard) {
+  const firstPath = row.paths?.[0];
+  if (firstPath === undefined) {
     return { kind: "group", key: row.key };
   }
   return preferCardIndex && row.startIndex !== undefined
     ? { kind: "card-index", index: row.startIndex }
-    : { kind: "card", path: firstCard.path, ...(row.groupKey === undefined ? {} : { groupKey: row.groupKey }) };
+    : { kind: "card", path: firstPath, ...(row.groupKey === undefined ? {} : { groupKey: row.groupKey }) };
 }
 
 /**
@@ -191,7 +191,7 @@ function findAnchorRowIndex(rows: readonly AnchorCandidateRow[], ref: RowAnchorR
     const row = rows[index];
     const matches = ref.kind === "group"
       ? row.key === ref.key
-      : ((ref.groupKey === undefined || row.groupKey === ref.groupKey) && (row.cards?.some((card) => card.path === ref.path) ?? false));
+      : ((ref.groupKey === undefined || row.groupKey === ref.groupKey) && row.paths?.includes(ref.path));
     if (matches) {
       return index;
     }

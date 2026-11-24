@@ -51,6 +51,7 @@ export class LinksActions {
     }
     if (!alreadyLinks) {
       this.deps.context.store.setLinksPinned(false);
+      this.deps.context.onBrowseChange?.();
     }
     this.selectLinksScope(createLinksScope(sourceFile.path, direction));
   }
@@ -63,10 +64,12 @@ export class LinksActions {
     const store = this.deps.context.store;
     if (!store.getLinksPinned()) {
       store.setLinksPinned(true);
+      this.deps.context.onBrowseChange?.();
       this.deps.context.publishGroups("scope");
       return;
     }
     store.setLinksPinned(false);
+    this.deps.context.onBrowseChange?.();
     const active = this.deps.context.getApp().workspace.getActiveFile();
     if (active instanceof TFile && active.path !== scope.notePath) {
       // The re-point publishes the scope group through scope selection.

@@ -16,6 +16,8 @@ export interface ViewContext {
     /** Reset source defaults while retaining filters until the complete scope commit. */
     reset(scope: import("./scope").CardScope): void;
   };
+  /** A runtime-owned, restorable browsing field changed. */
+  onBrowseChange?: () => void;
   /** Desktop streams retain a missing source identity so the host can show a recovery surface. */
   onMissingScope?: (scope: import("./scope").CardScope) => void;
   workGate?: import("../runtime/work-gate").RuntimeWorkGate;

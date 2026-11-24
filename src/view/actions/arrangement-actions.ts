@@ -345,6 +345,7 @@ export class ArrangementActions {
         return;
     }
 
+    this.deps.context.onBrowseChange?.();
     if (this.deps.isScopeSettled?.() === false) return;
     this.deps.reprojectCards();
     this.deps.reconcileToVisibleCards();

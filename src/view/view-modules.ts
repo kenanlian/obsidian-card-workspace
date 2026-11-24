@@ -581,7 +581,10 @@ export function createViewModules(context: ViewContext, host: ViewModuleHost, de
   });
   const taskFilters = new TaskFilterController(context, {
     flushSettings: () => host.flushSettings?.() ?? Promise.resolve(),
-    refresh: () => { if (scopeController.isScopeSettled()) { projection.reprojectCards(); host.publishGroups("cards", "projection"); } },
+    refresh: () => {
+      context.onBrowseChange?.();
+      if (scopeController.isScopeSettled()) { projection.reprojectCards(); host.publishGroups("cards", "projection"); }
+    },
     groups: () => projection.getTaskSnapshot().copyGroups ?? [],
     canCopy: () => isTaskMode() && scopeController.isScopeSettled() && taskView.getStatus() === "ready",
     pending: (path, line) => taskActions.isPending(`${path}::L${line}`),

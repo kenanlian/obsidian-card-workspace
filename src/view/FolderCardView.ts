@@ -32,7 +32,7 @@ export const FOLDER_CARD_VIEW = "folder-card-view";
 const MAIN_WORKSPACE_MIN_WIDTH = 400;
 let streamSequence = 0;
 function nextStreamId(): string { return `stream-${Date.now().toString(36)}-${(++streamSequence).toString(36)}`; }
-type RuntimeEntry = { runtime: CardStreamRuntime; props: ReturnType<CardStreamRuntime["getPanelProps"]>; stop: () => void; stopActivity: (() => void) | null };
+type RuntimeEntry = { runtime: CardStreamRuntime; props: ReturnType<CardStreamRuntime["getPanelProps"]> };
 
 /** ItemView owns leaves and navigation; each plain runtime owns one browsing context. */
 export class FolderCardView extends ItemView implements HoverParent {
@@ -117,7 +117,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.stopStreams = this.desktop ? this.streams.subscribe(() => this.syncStreams()) : null;
   }
   private get currentRuntime(): CardStreamRuntime | null {
-    const id = this.streams.getState().currentStreamId;
+    const id = this.streams.getCurrentStreamId();
     return id ? this.runtimes.get(id)?.runtime ?? null : null;
   }
   private get navigationRuntime(): CardStreamRuntime { return this.currentRuntime ?? this.fallback; }
@@ -128,7 +128,7 @@ export class FolderCardView extends ItemView implements HoverParent {
   getViewType(): string { return FOLDER_CARD_VIEW; }
   getDisplayText(): string { return this.plugin.getUiStrings().view.displayName; }
   getIcon(): string { return CARD_WORKSPACE_ICON; }
-  hasCurrentStream(): boolean { return !this.desktop || this.streams.getState().currentStreamId !== null; }
+  hasCurrentStream(): boolean { return !this.desktop || this.streams.getCurrentStreamId() !== null; }
   getCardScopes(): readonly CardScope[] { return this.desktop ? this.streams.getState().streams.map(stream => stream.scope) : [this.fallback.getCardScope()]; }
   async waitForForeground(): Promise<void> {
     if (!this.desktop) { await this.fallback.modules.scopeController.waitForIdle(); return; }
@@ -136,7 +136,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     await this.plugin.waitForSettingsReady?.();
     if (this.stopped) return;
     this.seedLegacyState(); this.readyToLoad = true; this.syncStreams();
-    const id = this.streams.getState().currentStreamId; if (id) await this.ensureRuntime(id);
+    const id = this.streams.getCurrentStreamId(); if (id) await this.ensureRuntime(id);
   }
   getCardScope(): CardScope { return this.navigationRuntime.getCardScope(); }
   getCurrentFolderPath(): string | null { return this.navigationRuntime.getCurrentFolderPath(); }
@@ -183,14 +183,14 @@ export class FolderCardView extends ItemView implements HoverParent {
       return [stream.id, { title: stream.title ?? `${this.sourceLabel(stream.scope)}${numbered ? ` (${numbered})` : ""}`, ordinal: stream.title ? null : numbered }];
     }));
   }
-  private capture(id: string): void {
-    const entry = this.runtimes.get(id); const base = this.streams.getState().streams.find(stream => stream.id === id);
-    if (entry && base && (entry.runtime.hasLoadedScope() || entry.runtime.missing) && !this.pending.has(id)) this.streams.update(id, entry.runtime.captureSnapshot(base));
+  private capture(id: string) {
+    const entry = this.runtimes.get(id);
+    if (!entry || this.pending.has(id) || !(entry.runtime.hasLoadedScope() || entry.runtime.missing)) return "unchanged";
+    const base = this.streams.getStream(id);
+    return base ? this.streams.updateBrowsing(id, entry.runtime.captureBrowsing(base)) : "unchanged";
   }
   private captureAll(): void {
-    const previous = this.syncing; this.syncing = true;
-    try { for (const id of this.runtimes.keys()) this.capture(id); }
-    finally { this.syncing = previous; }
+    for (const id of this.runtimes.keys()) this.capture(id);
   }
   private syncStreams(): void {
     if (!this.desktop || this.stopped || this.syncing || this.restoring) return;
@@ -203,7 +203,7 @@ export class FolderCardView extends ItemView implements HoverParent {
         this.capture(id);
         if (state.streams.some(stream => stream.id === id)) this.sessions.set(id, entry.runtime.captureSelection());
         else this.sessions.delete(id);
-        entry.stop(); entry.stopActivity?.(); entry.runtime.cleanupLifecycle(); this.runtimes.delete(id); this.pending.delete(id);
+        entry.runtime.cleanupLifecycle(); this.runtimes.delete(id); this.pending.delete(id);
       }
       if (this.opened && this.readyToLoad) for (const id of visible) void this.ensureRuntime(id);
       const current = this.currentRuntime;
@@ -215,22 +215,24 @@ export class FolderCardView extends ItemView implements HoverParent {
   private ensureRuntime(id: string): Promise<CardStreamRuntime | null> {
     const underway = this.pending.get(id); if (underway) return underway;
     const existing = this.runtimes.get(id); if (existing) return Promise.resolve(existing.runtime);
-    const snapshot = this.streams.getState().streams.find(stream => stream.id === id) ?? (this.stagedTransfer?.id === id ? this.stagedTransfer : null);
+    const snapshot = this.streams.getStream(id) ?? (this.stagedTransfer?.id === id ? this.stagedTransfer : null);
     if (!snapshot || this.stopped) return Promise.resolve(null);
-    const runtime = new CardStreamRuntime(this, this.plugin, { snapshot, navLayout: this.navLayout, previewResources: this.resources,
-      onChange: () => { this.capture(id); this.publishStreams(); this.requestSave(); },
+    const runtime: CardStreamRuntime = new CardStreamRuntime(this, this.plugin, { snapshot, navLayout: this.navLayout, previewResources: this.resources,
+      onBrowseChange: () => {
+        if (this.stopped || this.restoring || this.runtimes.get(id)?.runtime !== runtime) return;
+        // Source defaults and filters are staged until the prepared scope publishes.
+        if (!runtime.modules.scopeController.isScopeSettled()) { this.requestSave(); return; }
+        const change = this.capture(id);
+        if (change === "scope") this.publishStreams();
+        if (change !== "unchanged") this.requestSave();
+      },
       onToggleNav: () => { void this.navLayout.onToggleNavPane(); },
       appendStreamMenu: (menu, payload) => this.appendNewStreamMenu(menu, payload),
-      isCurrent: () => this.streams.getState().currentStreamId === id,
+      isCurrent: () => this.streams.getCurrentStreamId() === id,
       getNavigationSnapshot: () => this.navigationRuntime.panelModel.getState().nav,
     });
     runtime.connect();
-    const entry: RuntimeEntry = { runtime, props: runtime.getPanelProps(), stop: () => {}, stopActivity: null };
-    this.runtimes.set(id, entry);
-    entry.stop = runtime.panelModel.subscribe(() => {
-      if (this.syncing || this.stopped || this.runtimes.get(id)?.runtime !== runtime) return;
-      this.capture(id); this.publishStreams(); this.requestSave();
-    });
+    this.runtimes.set(id, { runtime, props: runtime.getPanelProps() });
     const loading = Promise.resolve().then(async () => {
       await this.plugin.waitForSettingsReady?.();
       if (this.stopped || this.runtimes.get(id)?.runtime !== runtime) return null;
@@ -305,28 +307,28 @@ export class FolderCardView extends ItemView implements HoverParent {
       // Native state restoration must therefore initialize them without relying
       // on the startup pass over already visible leaves.
       this.seedLegacyState(); this.readyToLoad = true; this.syncStreams();
-      const current = this.streams.getState().currentStreamId;
+      const current = this.streams.getCurrentStreamId();
       if (this.opened && current) await this.ensureRuntime(current);
       return;
     }
     this.leafStateEpoch++; this.stagedTransfer = null; this.legacySeedPending = false;
     if (parsed.kind === "unsupported") {
       this.restoring = true;
-      for (const entry of this.runtimes.values()) { entry.stop(); entry.stopActivity?.(); entry.runtime.cleanupLifecycle(); }
+      for (const entry of this.runtimes.values()) { entry.runtime.cleanupLifecycle(); }
       this.runtimes.clear(); this.pending.clear(); this.sessions.clear();
       this.streams.restore({ version: 1, streams: [], currentStreamId: null, maximizedStreamId: null, navigation: this.navigationState });
       this.unsupported = parsed.raw; this.restored = true; this.restoring = false; this.publishStreams(); return;
     }
     this.restoring = true;
     try {
-      for (const entry of this.runtimes.values()) { entry.stop(); entry.stopActivity?.(); entry.runtime.cleanupLifecycle(); }
+      for (const entry of this.runtimes.values()) { entry.runtime.cleanupLifecycle(); }
       this.runtimes.clear(); this.pending.clear(); this.sessions.clear(); this.failures.clear();
       this.navigationState = parsed.state.navigation;
       this.navLayout.restoreLocalPosition(parsed.state.navigation.query, parsed.state.navigation.focusId);
       this.streams.restore(parsed.state); this.readyToLoad = true; this.restored = true; this.unsupported = null;
     } finally { this.restoring = false; }
     this.syncStreams();
-    const current = this.streams.getState().currentStreamId; if (this.opened && current) await this.ensureRuntime(current);
+    const current = this.streams.getCurrentStreamId(); if (this.opened && current) await this.ensureRuntime(current);
   }
   onOpen(): Promise<void> { return this.foreground = this.openView(); }
   private async openView(): Promise<void> {
@@ -363,7 +365,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       }));
     });
     this.syncStreams();
-    const current = this.streams.getState().currentStreamId; if (current && this.readyToLoad) await this.ensureRuntime(current);
+    const current = this.streams.getCurrentStreamId(); if (current && this.readyToLoad) await this.ensureRuntime(current);
   }
   async onClose(): Promise<void> {
     if (!this.desktop) { this.cleanupLifecycle(); await this.fallback.onClose(); return; }
@@ -376,20 +378,20 @@ export class FolderCardView extends ItemView implements HoverParent {
     this.stopped = true; this.stopStreams?.(); this.stopVault?.(); this.stopMetadata?.();
     if (this.saveTimer !== null) (this.containerEl.ownerDocument?.defaultView ?? window).clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    for (const entry of this.runtimes.values()) { entry.stop(); entry.stopActivity?.(); entry.runtime.cleanupLifecycle(); }
+    for (const entry of this.runtimes.values()) { entry.runtime.cleanupLifecycle(); }
     this.runtimes.clear(); this.pending.clear(); this.sessions.clear(); this.fallback.cleanupLifecycle(); this.navLayout.dispose(); this.resources.dispose();
     return { cancelledDebounce: true, clearedQueuedRequest: true, clearedPendingHydration: true };
   }
   async handleScopeSelection(request: FolderSelectionRequest) {
     if (!this.desktop) return this.fallback.handleScopeSelection(request);
-    const currentId = this.streams.getState().currentStreamId;
+    const currentId = this.streams.getCurrentStreamId();
     if (this.unsupported || this.stagedTransfer || (currentId && this.transferring.has(currentId))) return { action: "rejected_invalid" as const, scope: request.scope, generationChanged: false, preserveUiState: true };
     if (request.source === "restore") this.seedLegacyState();
     this.legacySeedPending = false; this.readyToLoad = true;
-    let id = this.streams.getState().currentStreamId;
+    let id = this.streams.getCurrentStreamId();
     if (!id) { const stream = this.makeSnapshot(request.scope); this.streams.add(stream); id = stream.id; }
     if (!this.runtimes.has(id) && !this.pending.has(id)) {
-      const previous = this.streams.getState().streams.find(stream => stream.id === id);
+      const previous = this.streams.getStream(id);
       if (previous && scopeIdentity(previous.scope) !== scopeIdentity(request.scope)) this.streams.update(id, {
         scope: request.scope, browse: createStreamBrowseState(request.scope, this.plugin.getSettings()), query: previous.query, anchor: null,
       });
@@ -409,7 +411,7 @@ export class FolderCardView extends ItemView implements HoverParent {
   }
   handleNavigationIntent(intent: import("./navigation-model").NavigationIntent): void {
     if (!this.desktop) { this.fallback.handleNavigationIntent(intent); return; }
-    const currentId = this.streams.getState().currentStreamId;
+    const currentId = this.streams.getCurrentStreamId();
     if (this.unsupported || this.stagedTransfer || (currentId && this.transferring.has(currentId))) return;
     if (intent.type === "activate" && (intent.mode === "new-stream" || !this.hasCurrentStream())) {
       const row = this.navLayout.getProjection().rows.find(candidate => candidate.id === intent.rowId);
@@ -508,7 +510,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     if (this.transferring.has(id) || this.stopped) return;
     this.legacySeedPending = false;
     this.capture(id);
-    const snapshot = this.streams.getState().streams.find(stream => stream.id === id); if (!snapshot) return;
+    const snapshot = this.streams.getStream(id); if (!snapshot) return;
     const labels = getStreamUiStrings(this.plugin.getUiLanguage());
     switch (command) {
       case "maximize": this.streams.toggleMaximized(id); break;
@@ -601,7 +603,7 @@ export class FolderCardView extends ItemView implements HoverParent {
   }
   async transferStream(id: string, copy = false): Promise<boolean> {
     if (!this.desktop || this.stopped || this.transferring.has(id)) return false;
-    this.capture(id); const original = this.streams.getState().streams.find(stream => stream.id === id); if (!original) return false;
+    this.capture(id); const original = this.streams.getStream(id); if (!original) return false;
     this.transferring.add(id); this.publishStreams();
     let leaf: WorkspaceLeaf | null = null;
     let createdTarget: FolderCardView | null = null;
@@ -631,11 +633,11 @@ export class FolderCardView extends ItemView implements HoverParent {
         || target.stagedTransfer !== targetToken || target.runtimes.get(snapshot.id)?.runtime !== transferred
         || (runtime && this.runtimes.get(id)?.runtime !== runtime)) throw new Error("Stream transfer cancelled");
       this.capture(id);
-      const latest = this.streams.getState().streams.find(stream => stream.id === id);
+      const latest = this.streams.getStream(id);
       const signature = (value: StreamSnapshot): string => JSON.stringify([value.scope, value.browse, value.query, value.searchOpen, value.linksPinned, value.taskFilters, value.collapsedGroups]);
       if (!latest || signature(latest) !== signature(original)) throw new Error("Source browsing changed during transfer");
       // The staged target is excluded from getState until both ownership changes commit.
-      target.streams.add(transferred.captureSnapshot({ ...snapshot, desiredExpanded: true }));
+      target.streams.add({ ...snapshot, ...transferred.captureBrowsing(snapshot), desiredExpanded: true });
       if (!copy) { this.sessions.delete(id); this.streams.remove(id, false); }
       target.stagedTransfer = null; target.restoring = false; target.readyToLoad = true; target.restored = true; target.syncStreams();
       this.transferring.delete(id); this.syncStreams(); target.requestSave(); this.requestSave();

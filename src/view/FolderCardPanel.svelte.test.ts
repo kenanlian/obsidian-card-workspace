@@ -13,6 +13,8 @@ import {
 import { defaultNavSectionOrder } from "../navigation-section-order";
 import FolderCardPanel from "./FolderCardPanel.svelte";
 import { createPanelModel, type PanelModelState } from "./panel-model";
+import * as rowProjection from "./row-projection";
+import * as virtualLayout from "./virtual-layout";
 import { projectNavigation } from "./navigation-projection";
 import type { CardGroupSegment } from "./card-grouping";
 import type { CardFileKind } from "./file-kind";
@@ -1008,6 +1010,110 @@ describe("FolderCardPanel.svelte", () => {
     expect(findCard("Sibling note")).toBe(siblingElement);
 
     await unmount(component);
+  });
+
+  it("reuses row structure on preview completion and updates positions only from a resized row", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
+    const project = vi.spyOn(rowProjection, "projectPanelRows");
+    const position = vi.spyOn(virtualLayout, "buildRowPositions");
+    let previewHeight = ESTIMATED_ROW_HEIGHT;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function(this: HTMLElement) {
+      const height = this.classList.contains("fce-wall-row")
+        ? this.querySelector("h4")?.textContent === "Card 1" ? previewHeight : ESTIMATED_ROW_HEIGHT : 0;
+      return new DOMRect(0, 0, 300, height);
+    });
+    const state = createInitialPanelState();
+    state.cards.records = Array.from({ length: 40 }, (_, i) => ({
+      ...createCard(`notes/${i}.md`, `Card ${i}`), hydrated: i !== 1,
+    }));
+    const panelModel = createPanelModel(state);
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const component = mount(FolderCardPanel, { target, props: { panelModel } });
+    async function settleMeasurement() {
+      await tick();
+      await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()));
+      await tick();
+    }
+    function publishPreview(text: string) {
+      panelModel.mutate(draft => {
+        draft.cards = { ...draft.cards, records: draft.cards.records.map((card, i) =>
+          i === 1 ? { ...card, hydrated: true, previewHtml: `<p>${text}</p>` } : card) };
+      });
+    }
+    try {
+      await settleMeasurement();
+      expect(project).toHaveBeenCalled();
+      expect(position).toHaveBeenCalled();
+      const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+      list.scrollTop = 700;
+      list.dispatchEvent(new Event("scroll"));
+      await settleMeasurement();
+      project.mockClear(); position.mockClear();
+
+      publishPreview("Same height");
+      await settleMeasurement();
+      expect(target.textContent).toContain("Same height");
+      expect(project).not.toHaveBeenCalled();
+      expect(position).not.toHaveBeenCalled();
+
+      for (const delta of [70, -25]) {
+        previewHeight = ESTIMATED_ROW_HEIGHT + delta;
+        publishPreview(`Height ${previewHeight}`);
+        await settleMeasurement();
+        expect(project).not.toHaveBeenCalled();
+        expect(position.mock.calls.map(call => call[4])).toEqual([1]);
+        expect(list.scrollTop).toBe(700 + delta);
+        position.mockClear();
+      }
+
+      panelModel.mutate(draft => {
+        draft.cards = { ...draft.cards, records: [...draft.cards.records].reverse(),
+          sequenceRevision: draft.cards.sequenceRevision + 1 };
+      });
+      await settleMeasurement();
+      expect(project).toHaveBeenCalledTimes(1);
+      expect(position.mock.calls[0]?.[4]).toBe(0);
+      expect(target.querySelector("h4")?.textContent).toBe("Card 39");
+    } finally { await unmount(component); }
+  });
+
+  it("reports a settled user scroll once and ignores scroll events from restoring an anchor", async () => {
+    vi.useFakeTimers();
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const state = createInitialPanelState();
+    state.cards.records = Array.from({ length: 40 }, (_, i) => createCard(`notes/${i}.md`, `Card ${i}`));
+    const panelModel = createPanelModel(state);
+    const onReadingPositionChange = vi.fn();
+    const onReadingPosition = vi.fn();
+    const component = mount(FolderCardPanel, { target, props: { panelModel, onReadingPositionChange, onReadingPosition } });
+    try {
+      await tick();
+      const list = target.querySelector<HTMLDivElement>(".fce-list")!;
+      list.scrollTop = 700;
+      list.dispatchEvent(new Event("scroll"));
+      await vi.advanceTimersByTimeAsync(100);
+      list.scrollTop = 710;
+      list.dispatchEvent(new Event("scroll"));
+      await vi.advanceTimersByTimeAsync(179);
+      expect(onReadingPositionChange).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(onReadingPositionChange).toHaveBeenCalledOnce();
+
+      const bridge = onReadingPosition.mock.lastCall![0];
+      bridge.restore({ ref: { kind: "card-index", index: 2 }, offset: 0 }, state.scope.sourceIdentity);
+      await tick(); await tick();
+      expect(list.scrollTop).toBe(ESTIMATED_ROW_HEIGHT);
+      list.dispatchEvent(new Event("scroll"));
+      panelModel.mutate(draft => { draft.cards = { ...draft.cards, records: [...draft.cards.records] }; });
+      await tick();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(onReadingPositionChange).toHaveBeenCalledOnce();
+    } finally {
+      await unmount(component);
+      vi.useRealTimers();
+    }
   });
 
   it("keeps the list scrollable inside the main pane and survives scroll events", async () => {
@@ -2644,6 +2750,7 @@ describe("FolderCardPanel.svelte task stream", () => {
     const { target, panelModel, component } = mountPanel(createTaskPanelState([task]), { onTaskToggle });
     model = panelModel;
     await tick();
+    const project = vi.spyOn(rowProjection, "projectPanelRows");
     const check = () => target.querySelector<HTMLButtonElement>(".fce-task-check")!;
     check().click();
     await tick();
@@ -2653,12 +2760,14 @@ describe("FolderCardPanel.svelte task stream", () => {
 
     // The index refresh replaces the content under the same id, then the host clears pending.
     panelModel.mutate((draft) => {
-      draft.cards = { ...draft.cards, taskRecords: [createTask("notes/a.md", 2, "Ship it", true)], pendingTaskIds: [] };
+      draft.cards = { ...draft.cards, taskRecords: [createTask("notes/a.md", 2, "Shipped", true)], pendingTaskIds: [] };
     });
     await tick();
     expect(check().getAttribute("aria-checked")).toBe("true");
     expect(target.querySelector(".fce-task-row")?.classList.contains("is-pending")).toBe(false);
     expect(target.querySelector(".fce-task-row")?.classList.contains("is-completed")).toBe(true);
+    expect(target.querySelector(".fce-task-text")?.textContent).toBe("Shipped");
+    expect(project).not.toHaveBeenCalled();
     await unmount(component);
   });
 

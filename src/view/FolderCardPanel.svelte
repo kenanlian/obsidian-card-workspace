@@ -36,7 +36,7 @@
     findIndexAtOffset,
     getHydrateRangeForPanelRows,
     projectPanelRows,
-    type PanelRow,
+    type PanelRow as ProjectedRow,
   } from "./row-projection";
   import { pinnedHeaderAnchorOffset, resolveStickyGroupHeader } from "./sticky-group-header";
   import { estimateRowHeight, estimateTaskRowHeight, resolveAppearanceLayoutIdentity } from "./appearance-layout";
@@ -118,6 +118,7 @@
   interface FolderCardPanelProps {
     onRegionReady?: (element: HTMLElement | null) => void;
     onInteractionCleanup?: (cancel: (() => void) | null) => void;
+    onReadingPositionChange?: () => void;
     onReadingPosition?: (bridge: import("./scope-history").ReadingPositionBridge | null) => void;
     runtimeDevice?: import("../runtime/platform").RuntimeDevice;
     panelModel: PanelModel;
@@ -255,7 +256,7 @@
     onPinToggle,
     onCardHoverLink,
     onCardDragStart, resolveCardDragPaths, onBeginCardDrag, onDropCards,
-    onRegionReady, onInteractionCleanup, onReadingPosition, runtimeDevice = "desktop",
+    onRegionReady, onInteractionCleanup, onReadingPosition, onReadingPositionChange, runtimeDevice = "desktop",
     onToolbarAction,
     onSortChange,
     onGroupChange,
@@ -455,7 +456,6 @@
   const USER_SCROLL_LOCK_MS = 180;
   const panelInstanceId = $props.id();
 
-  type ProjectedRow = PanelRow<NoteCardRecord | TaskCardRecord>;
   type ProjectedCardRow = Extract<ProjectedRow, { kind: "cards" }>;
 
   let viewportEl = $state<HTMLDivElement | null>(null);
@@ -744,14 +744,25 @@
     });
   });
 
-  $effect(() => {
-    const nextScopeIdentity = scopeIdentity;
-    const revision = cards.sequenceRevision;
-    const groupRevision = cards.groupRevision;
-    const nextArrangementIdentity = taskMode
+  // The host replaces the cards group when previews arrive. Keep only scalar
+  // structure dependencies here; mounted rows read current records by index.
+  const sequenceRevision = $derived(cards.sequenceRevision);
+  const groupRevision = $derived(cards.groupRevision);
+  const materializedCount = $derived(rowSource.length);
+  const arrangementIdentity = $derived(taskMode
       ? ["tasks", projection.taskSort?.field ?? "", projection.taskSort?.direction ?? "", projection.taskGroup?.dimension ?? "", projection.taskGroup?.timeGranularity ?? ""].join("\u0000")
-      : [scope.draw?.active ? `draw:${scope.draw.revision}` : "browse", projection.sortField, projection.sortDirection, projection.group.dimension, projection.group.propertyKey ?? "", projection.group.timeGranularity ?? "", projection.group.orderBy, projection.group.orderDirection].join("\u0000");
-    const nextBrowseFilterMode = resolveBrowseFilterMode(scope, projection.activeFilterTags.length, nav.propertyFilterCount), columns = columnCount;
+      : [scope.draw?.active ? `draw:${scope.draw.revision}` : "browse", projection.sortField, projection.sortDirection, projection.group.dimension, projection.group.propertyKey ?? "", projection.group.timeGranularity ?? "", projection.group.orderBy, projection.group.orderDirection].join("\u0000"));
+  const browseFilterMode = $derived(resolveBrowseFilterMode(scope, projection.activeFilterTags.length, nav.propertyFilterCount));
+
+  $effect(() => {
+    void panelModel;
+    void sequenceRevision;
+    void groupRevision;
+    void materializedCount;
+    const nextScopeIdentity = scopeIdentity;
+    const nextArrangementIdentity = arrangementIdentity;
+    const nextBrowseFilterMode = browseFilterMode;
+    const columns = columnCount;
     untrack(() => {
       const scopeChanged = nextScopeIdentity !== lastProjectedScopeIdentity;
       const arrangementChanged = lastArrangementIdentity !== null && nextArrangementIdentity !== lastArrangementIdentity;
@@ -778,17 +789,9 @@
           preferCardIndex: isFlatLayout(projectedRows),
         });
       }
-      projectedRows = projectPanelRows<NoteCardRecord | TaskCardRecord>(taskMode ? taskRecords : cards.records, groupSegments, columns);
+      projectedRows = projectPanelRows(rowSource, groupSegments, columns);
       rebuildPositionsFrom(0);
     });
-    void nextScopeIdentity; void revision; void groupRevision; void nextArrangementIdentity; void nextBrowseFilterMode;
-  });
-
-  $effect(() => {
-    if (!cards.loading && rowSource.length > 0 && projectedRows.length === 0) {
-      projectedRows = projectPanelRows(rowSource, groupSegments, columnCount);
-      rebuildPositionsFrom(0);
-    }
   });
 
   $effect(() => {
@@ -898,7 +901,7 @@
   }
 
   function handleSearchSnippetsCommand(payload: { path: string; command: "expand" | "more" | "collapse" }): void {
-    const rowIndex = projectedRows.findIndex(row => row.kind === "cards" && row.cards.some(card => card.path === payload.path));
+    const rowIndex = projectedRows.findIndex(row => row.kind === "cards" && row.paths.includes(payload.path));
     const rowAnchor = captureRowAnchor({ scrollTop, rowPositions, rows: projectedRows, rowIndex });
     snippetInteraction = rowAnchor ? {
       anchor: { ref: { kind: "card", path: payload.path }, offset: rowAnchor.offset },
@@ -998,13 +1001,23 @@
     return getSpacerStyle(bottomPadding);
   }
 
+  let readingPositionTimer: number | undefined;
+  let readingPositionWindow: Window | null = null;
+  onDestroy(() => readingPositionWindow?.clearTimeout(readingPositionTimer));
+
   function handleScroll(): void {
     if (!viewportEl) {
       return;
     }
 
-    if (!isAdjustingScroll) {
+    // applyScrollTop already recorded programmatic moves before their DOM scroll event.
+    if (!isAdjustingScroll && viewportEl.scrollTop !== scrollTop) {
       markUserScrolling();
+      if (onReadingPositionChange) {
+        readingPositionWindow = viewportEl.ownerDocument.defaultView ?? window;
+        readingPositionWindow.clearTimeout(readingPositionTimer);
+        readingPositionTimer = readingPositionWindow.setTimeout(onReadingPositionChange, USER_SCROLL_LOCK_MS);
+      }
     }
 
     scrollTop = viewportEl.scrollTop;

@@ -10,7 +10,7 @@ import {
 import { projectPanelRows, type RowSegment } from "./row-projection";
 
 function cardRow(...paths: string[]): AnchorCandidateRow {
-  return { kind: "cards", key: `3:${paths.join("\u001f")}`, cards: paths.map((path) => ({ path })) };
+  return { kind: "cards", key: `3:${paths.join("\u001f")}`, paths };
 }
 
 function headerRow(key: string): AnchorCandidateRow {

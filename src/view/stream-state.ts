@@ -5,7 +5,7 @@ import { normalizeExpandedPropertyKeys, normalizePropertyFilterClauses } from ".
 import { NAV_PANE_WIDTH_MAX, NAV_PANE_WIDTH_MIN, normalizeLinksSort, type PluginSettings } from "../settings";
 import { normalizeDefaultViewMode, normalizeTaskGroupSpec, normalizeTaskSortSpec } from "../task-view-settings";
 import { isValidIsoDate } from "../tasks/task-dates";
-import type { CardScope } from "./scope";
+import { scopesEqual, type CardScope } from "./scope";
 import type { RowAnchor } from "./scroll-anchoring";
 import type { StreamBrowseState } from "./stream-browse-state";
 import type { TaskFilterSpec } from "./task-filters";
@@ -28,6 +28,10 @@ export interface StreamSnapshot {
   /** Legacy pixel width used when migrating a V1 row to split proportions. */
   width: number | null;
 }
+
+/** Runtime-owned portion of a stream. Tile operations own the other fields. */
+export type StreamBrowsingSnapshot = Pick<StreamSnapshot,
+  "scope" | "browse" | "query" | "searchOpen" | "linksPinned" | "taskFilters" | "collapsedGroups" | "anchor" | "anchorIndex">;
 
 export interface LeafNavigationState {
   width: number;
@@ -130,6 +134,24 @@ export class LeafStreamController {
     this.layout = this.legacyLayout();
     this.currentStreamId = this.streams.find(stream => stream.desiredExpanded)?.id ?? null;
     this.clock = this.streams.reduce((clock, stream) => Math.max(clock, stream.lastActive), 0);
+  }
+
+  getCurrentStreamId(): string | null { return this.currentStreamId; }
+
+  getStream(id: string): StreamSnapshot | null {
+    const stream = this.streams.find(item => item.id === id);
+    return stream ? cloneStream(stream) : null;
+  }
+
+  /** Saving live browsing must not re-enter the tile and runtime lifecycle. */
+  updateBrowsing(id: string, browsing: StreamBrowsingSnapshot): "unchanged" | "browsing" | "scope" {
+    const index = this.streams.findIndex(stream => stream.id === id);
+    const previous = this.streams[index];
+    if (!previous) return "unchanged";
+    const next = { ...previous, ...browsing };
+    if (equal(previous, next)) return "unchanged";
+    this.streams[index] = cloneStream(next);
+    return scopesEqual(previous.scope, next.scope) ? "browsing" : "scope";
   }
 
   getState(): LeafStreamState {
