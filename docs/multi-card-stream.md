@@ -13,7 +13,7 @@ To open a source in a new stream:
 - Choose **New stream…** from a stream menu to pick a folder, box, tag, property value or links reference.
 - **Split stream** duplicates the current stream's browsing conditions and reading position.
 
-A new stream opens to the right of the current one, one card column wide (320 px), and becomes the current target. Existing streams keep their widths. When the pane sits in a sidebar, the sidebar widens to fit the new stream, leaving at least 400 px for the main workspace. Otherwise, and once that limit is reached, the stream row scrolls horizontally. Closing streams never shrinks the sidebar.
+A new stream takes the right half of the current stream’s area and becomes the current target. To choose a different position, open the stream title menu and choose **New stream at…** or **Split stream at…**, then choose a stream or group and a side. Groups are labeled with the titles of their members. Each split initially divides the available space equally.
 
 New streams start from the source's default arrangement with an empty search and filters. Repeated sources are allowed; default titles add a number to tell copies apart, and **Rename stream** changes only the stream's display name.
 
@@ -23,12 +23,14 @@ Clicking or focusing inside a stream makes it the current target. With several s
 
 The stream menu lists every stream (a check marks the current one) and offers:
 
-- **Maximize stream** shows only that stream at the full pane width. **Restore streams** returns to the side-by-side row. While maximized, selecting another stream maximizes that one instead.
-- **Collapse stream** shrinks it to a narrow vertical strip with its title. Clicking the strip expands and selects it; right-clicking opens its menu.
-- **Move left** / **Move right** reorder streams; dragging a stream's title or strip does the same.
+- **Maximize stream** shows only that stream across the whole stream area. **Restore streams** returns to the previous layout. While maximized, selecting another stream maximizes that one instead.
+- **Collapse stream** shrinks it to a title strip, vertical between columns or horizontal between rows. Clicking the strip expands and selects it; right-clicking opens its menu.
+- **Move stream to…** places the stream along any of the four sides of a stream or group. When several streams are tiled, drag anywhere on the thin three-dot strip above a toolbar to move that stream. You can also drag the title or a collapsed strip. At a shared edge, the outermost band selects the entire group; moving slightly inward selects a smaller group or stream. The shaded preview shows the resulting position. Release to place it, or press Escape to cancel.
 - **Close stream** removes it without deleting notes or boxes. Toolbars also show a close button when the pane has more than one stream.
 
-Drag a thin separator between streams to change the width of the stream to its left (minimum 240 px). The outer right edge has no stream resize handle: use Obsidian's native sidebar divider to resize the sidebar. The last expanded stream stretches to fill spare space. There is no fixed stream-count limit, and streams never collapse automatically. Streams scrolled out of view pause their preview work. A narrow desktop pane uses the existing navigation/content switch.
+For example, to put A and B above a full-width C, start with A and B side by side. Choose **New stream at…**, select **A + B**, choose **Below**, and select C’s source. If C already exists, use **Move stream to…** from C instead.
+
+Drag an internal separator to change the proportions of that split. A row divider adjusts both columns above it together. Column dividers inside that row adjust only their own columns. The proportions follow the window size. Expanded tiles need at least 240 px of width and 160 px of height. A sidebar can widen to make room, leaving 400 px for the main workspace. When the tiles exceed the available space the stream area scrolls on the affected axis. Each stream has its own card scrollbar. A narrow desktop pane retains the navigation/content switch.
 
 All streams may be collapsed or closed. With no current target, choosing a navigation source creates a new stream. Closing or moving the last stream leaves an empty pane offering **New stream…**, **Reopen closed stream**, and the navigation toggle. **Reopen closed stream** restores up to ten recently closed streams in the same session; that history is cleared on restart.
 
@@ -46,12 +48,12 @@ New and duplicated links streams default to a fixed reference. A fixed reference
 
 **Copy to a new pane** preserves the original and starts an independent copy without bulk selection. Menus and drag gestures are not transferred. Each pane has its own navigation. Global open-source commands ask for a target when multiple Card Workspace panes exist in the same window; cancelling changes nothing.
 
-Normal Obsidian workspace restoration preserves each pane's streams, order, names, conditions, collapse and maximize choices, current target and widths. Missing sources show a repairable empty state. Missing reading anchors fall back to a nearby position. Temporary bulk selections and the recently closed history are not restored after restart.
+Normal Obsidian workspace restoration preserves each pane's streams, order, names, conditions, collapse and maximize choices, current target and split proportions. Missing sources show a repairable empty state. Missing reading anchors fall back to a nearby position. Temporary bulk selections and the recently closed history are not restored after restart.
 
 ## Keyboard and boundaries
 
 Desktop commands also create, split, maximize/restore, collapse, close, reopen and transfer streams, or select the next/previous stream. They use the active Card Workspace pane and require a current target when operating on a stream; no shortcuts are assigned by default.
 
-Stream titles and collapsed strips are buttons: Enter/Space opens the menu or expands the stream. **Move left** / **Move right** offer a keyboard alternative to dragging. Focused separators resize with Left/Right; Shift uses a larger step. Current and collapsed states have accessible labels as well as visual styling.
+Stream titles and collapsed strips are buttons: Enter/Space opens the menu or expands the stream. **Move stream to…** offers a keyboard alternative to dragging. Focused separators resize with the arrow keys along their axis; Shift uses a larger step. Current and collapsed states have accessible labels as well as visual styling.
 
 This version does not add moving streams into existing panes, drag-out detachment, operating-system windows or cross-window transfers, saved named stream groups, reopening entire closed panes, or cross-stream card drops that change membership. Existing note-opening destinations remain available.

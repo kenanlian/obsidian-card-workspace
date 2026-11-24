@@ -1,3 +1,4 @@
+import { GAP, MIN_WIDTH, cloneLayout, moveTile, insert, rewrite, tileKey, tiles, validTiles, type Placement, type Tile } from "./stream-tiles";
 import { normalizeGroupSpec } from "../card-grouping-settings";
 import { normalizeExpandedFolderPaths, normalizeExpandedTagPaths } from "../navigation-expansion-settings";
 import { normalizeExpandedPropertyKeys, normalizePropertyFilterClauses } from "../property-filter-settings";
@@ -24,7 +25,7 @@ export interface StreamSnapshot {
   anchorIndex: number;
   desiredExpanded: boolean;
   lastActive: number;
-  /** Pixel width in the stream strip; null shares the remaining width. */
+  /** Legacy pixel width used when migrating a V1 row to split proportions. */
   width: number | null;
 }
 
@@ -47,7 +48,10 @@ export interface DesktopLeafStateV1 {
   navigation: LeafNavigationState;
 }
 
+export interface DesktopLeafStateV2 extends Omit<DesktopLeafStateV1, "version"> { version: 2; layout: Tile | null }
+
 export interface LeafStreamState {
+  layout: Tile | null;
   streams: readonly StreamSnapshot[];
   currentStreamId: string | null;
   maximizedStreamId: string | null;
@@ -58,15 +62,12 @@ export interface LeafStreamState {
   recentlyClosedCount: number;
 }
 
-export const STREAM_MIN_WIDTH = 240;
 /** One card column: the card minimum width plus list padding. */
 export const STREAM_DEFAULT_WIDTH = 320;
 export const STREAM_MAX_WIDTH = 4000;
-export const STREAM_SPINE_WIDTH = 28;
-export const STREAM_SEPARATOR_SIZE = 6;
 
 function clampWidth(width: number): number {
-  return Math.round(Math.max(STREAM_MIN_WIDTH, Math.min(STREAM_MAX_WIDTH, width)));
+  return Math.round(Math.max(MIN_WIDTH, Math.min(STREAM_MAX_WIDTH, width)));
 }
 
 function cloneStream(stream: StreamSnapshot): StreamSnapshot {
@@ -108,6 +109,8 @@ function equal(left: unknown, right: unknown): boolean {
 
 /** Public values are deep copies: consumers cannot mutate controller-owned snapshots. */
 export class LeafStreamController {
+  private layout: Tile | null = null;
+  private awaitingMeasurement = false;
   private streams: StreamSnapshot[];
   private currentStreamId: string | null;
   private maximizedStreamId: string | null = null;
@@ -116,18 +119,19 @@ export class LeafStreamController {
   private revision = 0;
   private clock = 0;
   private readonly listeners = new Set<(state: LeafStreamState) => void>();
-  private readonly closed: { stream: StreamSnapshot; index: number }[] = [];
+  private readonly closed: { stream: StreamSnapshot; place?: Placement; ratio?: number; groupId?: string }[] = [];
 
   constructor(initialStreams: StreamSnapshot[] = []) {
     if (new Set(initialStreams.map(stream => stream.id)).size !== initialStreams.length) throw new Error("Duplicate stream ID");
     this.streams = initialStreams.map(cloneStream);
+    this.layout = this.legacyLayout();
     this.currentStreamId = this.streams.find(stream => stream.desiredExpanded)?.id ?? null;
     this.clock = this.streams.reduce((clock, stream) => Math.max(clock, stream.lastActive), 0);
   }
 
   getState(): LeafStreamState {
     return {
-      streams: this.streams.map(cloneStream), currentStreamId: this.currentStreamId, maximizedStreamId: this.maximizedStreamId,
+      layout: cloneLayout(this.layout), streams: this.streams.map(cloneStream), currentStreamId: this.currentStreamId, maximizedStreamId: this.maximizedStreamId,
       visibleIds: this.visibleIds(), width: this.width, height: this.height,
       revision: this.revision, recentlyClosedCount: this.closed.length,
     };
@@ -139,19 +143,37 @@ export class LeafStreamController {
     return () => this.listeners.delete(listener);
   }
 
-  /** Inserts after the current stream. Existing streams keep their rendered widths; the new one starts as one column. */
-  add(snapshot: StreamSnapshot, index?: number): void {
+  private legacyLayout(): Tile | null {
+    const widths = legacyExpandedWidths(this.streams, this.width);
+    let root: Tile | null = null;
+    let total = 0;
+    for (const [id, width] of widths) {
+      const span = total + width;
+      const gap = root ? GAP : 0;
+      root = insert(root, id, { target: root ? tileKey(root) : "", side: "right" }, total / span);
+      total = span + gap;
+    }
+    return root;
+  }
+
+  private sortByLayout(): void {
+    const byId = new Map(this.streams.map(stream => [stream.id, stream]));
+    this.streams = tiles(this.layout).flatMap(tile => tile.kind === "stream" ? [byId.get(tile.id)!] : []);
+  }
+
+  add(snapshot: StreamSnapshot, placement?: Placement, ratio?: number, groupId?: string): void {
     if (this.streams.some(stream => stream.id === snapshot.id)) return;
-    const currentIndex = this.streams.findIndex(stream => stream.id === this.currentStreamId);
-    const insertion = index === undefined ? (currentIndex < 0 ? this.streams.length : currentIndex + 1) : this.boundIndex(index);
+    const target = placement ?? { target: this.currentStreamId ? "stream:" + this.currentStreamId : this.layout ? tileKey(this.layout) : "", side: "right" };
+    if (this.layout && !tiles(this.layout).some(tile => tileKey(tile) === target.target)) return;
+    this.awaitingMeasurement = false;
+    this.layout = insert(this.layout, snapshot.id, target, ratio, groupId);
     this.maximizedStreamId = null;
-    this.freezeWidths();
     const stream = cloneStream(snapshot);
     stream.desiredExpanded = true;
-    stream.width = stream.width === null ? STREAM_DEFAULT_WIDTH : clampWidth(stream.width);
     this.clock = Math.max(this.clock, stream.lastActive);
     stream.lastActive = ++this.clock;
-    this.streams.splice(insertion, 0, stream);
+    this.streams.push(stream);
+    this.sortByLayout();
     this.currentStreamId = stream.id;
     this.publish();
   }
@@ -216,8 +238,27 @@ export class LeafStreamController {
     if (from < 0 || !Number.isFinite(index)) return;
     const target = Math.max(0, Math.min(this.streams.length - 1, Math.trunc(index)));
     if (target === from) return;
-    const [stream] = this.streams.splice(from, 1);
-    this.streams.splice(target, 0, stream);
+    const neighbor = this.streams[target];
+    this.place(id, { target: "stream:" + neighbor.id, side: target < from ? "left" : "right" });
+  }
+
+  place(id: string, placement: Placement): void {
+    if (!this.layout || !this.streams.some(s => s.id === id)) return;
+    const layout = moveTile(this.layout, id, placement);
+    if (!layout) return;
+    this.layout = layout;
+    this.awaitingMeasurement = false;
+    this.maximizedStreamId = null;
+    this.sortByLayout();
+    this.publish();
+  }
+
+  resizeSplit(id: string, ratio: number): void {
+    if (!this.layout || !(ratio > 0 && ratio < 1)) return;
+    const next = rewrite(this.layout, "split:" + id, node => node.kind === "split" && node.ratio !== ratio ? { ...node, ratio } : node);
+    if (next === this.layout) return;
+    this.layout = next;
+    this.awaitingMeasurement = false;
     this.publish();
   }
 
@@ -227,8 +268,17 @@ export class LeafStreamController {
     if (this.maximizedStreamId === id) this.maximizedStreamId = null;
     const visible = this.visibleIds();
     const [stream] = this.streams.splice(index, 1);
+    const key = "stream:" + id;
+    const parent = tiles(this.layout).find(t => t.kind === "split" && (tileKey(t.first) === key || tileKey(t.second) === key));
+    this.layout = this.layout && rewrite(this.layout, key, () => null);
+    this.awaitingMeasurement = false;
     if (remember) {
-      this.closed.push({ stream: cloneStream(stream), index });
+      const first = parent?.kind === "split" && tileKey(parent.first) === key;
+      const position: { groupId?: string; ratio?: number; place?: Placement } = parent?.kind === "split" ? { groupId: parent.id, ratio: parent.ratio, place: {
+        target: tileKey(first ? parent.second : parent.first),
+        side: (parent.axis === "x" ? first ? "left" : "right" : first ? "top" : "bottom"),
+      } } : {};
+      this.closed.push({ stream: cloneStream(stream), ...position });
       if (this.closed.length > 10) this.closed.shift();
     }
     if (this.currentStreamId === id) this.selectAdjacent(index, visible.filter(value => value !== id), true);
@@ -246,7 +296,8 @@ export class LeafStreamController {
       while (this.streams.some(stream => stream.id === `${original}-${suffix}`)) suffix++;
       closed.stream.id = `${original}-${suffix}`;
     }
-    this.add(closed.stream, closed.index);
+    const place = tiles(this.layout).some(t => tileKey(t) === closed.place?.target) ? closed.place : undefined;
+    this.add(closed.stream, place, place ? closed.ratio : undefined, closed.groupId);
     return cloneStream(this.streams.find(stream => stream.id === closed.stream.id)!);
   }
 
@@ -255,16 +306,7 @@ export class LeafStreamController {
     const nextHeight = Number.isFinite(height) ? Math.max(0, height) : 0;
     if (nextWidth === this.width && nextHeight === this.height) return;
     this.width = nextWidth; this.height = nextHeight;
-    this.publish();
-  }
-
-  /** Resizing one stream moves the streams after it instead of shrinking them. */
-  setWidth(id: string, width: number): void {
-    const stream = this.streams.find(value => value.id === id);
-    if (!stream || !Number.isFinite(width)) return;
-    const next = clampWidth(width);
-    if (stream.width === next) return;
-    stream.width = next;
+    if (this.awaitingMeasurement && nextWidth > 0) { this.layout = this.legacyLayout(); this.awaitingMeasurement = false; }
     this.publish();
   }
 
@@ -274,7 +316,7 @@ export class LeafStreamController {
       cloneStream({ ...rewrite(cloneStream(stream)), id: stream.id });
     // Build the complete replacement before publication, including when a rewrite throws.
     const streams = this.streams.map(rewriteStream);
-    const closed = this.closed.map(entry => ({ stream: rewriteStream(entry.stream), index: entry.index }));
+    const closed = this.closed.map(entry => ({ ...entry, stream: rewriteStream(entry.stream) }));
     if (equal(this.streams, streams) && equal(this.closed, closed)) return;
     this.streams = streams;
     this.closed.splice(0, this.closed.length, ...closed);
@@ -282,11 +324,14 @@ export class LeafStreamController {
     this.publish();
   }
 
-  restore(state: DesktopLeafStateV1): void {
-    const changed = !equal(this.streams, state.streams) || this.currentStreamId !== state.currentStreamId
+  restore(state: DesktopLeafStateV1 | DesktopLeafStateV2): void {
+    const changed = state.version === 1 || !equal(this.layout, state.layout) || !equal(this.streams, state.streams) || this.currentStreamId !== state.currentStreamId
       || this.maximizedStreamId !== state.maximizedStreamId || this.closed.length > 0;
     if (!changed) return;
     this.streams = state.streams.map(cloneStream);
+    this.awaitingMeasurement = state.version === 1 && this.width === 0;
+    this.layout = state.version === 2 ? cloneLayout(state.layout) : this.legacyLayout();
+    this.sortByLayout();
     this.currentStreamId = state.currentStreamId;
     this.maximizedStreamId = state.maximizedStreamId;
     this.clock = this.streams.reduce((clock, stream) => Math.max(clock, stream.lastActive), this.clock);
@@ -294,9 +339,9 @@ export class LeafStreamController {
     this.publish();
   }
 
-  toJSON(navigation: LeafNavigationState): DesktopLeafStateV1 {
+  toJSON(navigation: LeafNavigationState): DesktopLeafStateV1 | DesktopLeafStateV2 {
     return {
-      version: 1, streams: this.streams.map(cloneStream), currentStreamId: this.currentStreamId,
+      ...(this.awaitingMeasurement ? {version: 1 as const} : {version: 2 as const, layout: cloneLayout(this.layout)}), streams: this.streams.map(cloneStream), currentStreamId: this.currentStreamId,
       maximizedStreamId: this.maximizedStreamId, navigation: cloneNavigation(navigation),
     };
   }
@@ -304,14 +349,6 @@ export class LeafStreamController {
   private visibleIds(): string[] {
     if (this.maximizedStreamId !== null && this.streams.some(stream => stream.id === this.maximizedStreamId)) return [this.maximizedStreamId];
     return this.streams.filter(stream => stream.desiredExpanded).map(stream => stream.id);
-  }
-
-  private freezeWidths(): void {
-    if (this.width <= 0) return;
-    for (const item of resolveStreamLayout(this.getState())) {
-      const stream = item.display === "stream" ? this.streams.find(value => value.id === item.id) : undefined;
-      if (stream) stream.width = clampWidth(item.width);
-    }
   }
 
   private selectAdjacent(index: number, visibleIds: string[], removed = false): void {
@@ -323,62 +360,25 @@ export class LeafStreamController {
     if (next) next.lastActive = ++this.clock;
   }
 
-  private boundIndex(index: number): number {
-    return Number.isFinite(index) ? Math.max(0, Math.min(this.streams.length, Math.trunc(index))) : this.streams.length;
-  }
-
   private publish(): void {
     this.revision++;
     for (const listener of this.listeners) listener(this.getState());
   }
 }
 
-export interface StreamLayoutItem {
-  id: string;
-  display: "stream" | "spine";
-  width: number;
-  /** A resize separator follows this expanded item only when another item follows. */
-  separator: boolean;
-}
-
-/**
- * Strip layout in list order. Fixed widths never shrink to fit; null widths share
- * the rest, and the last expanded stream absorbs spare space. Without a measured
- * stage the layout reports each stream's own width.
- */
-export function resolveStreamLayout(state: Pick<LeafStreamState, "streams" | "maximizedStreamId" | "width">): StreamLayoutItem[] {
-  const stage = Math.max(0, state.width);
-  const maximized = state.maximizedStreamId === null ? undefined : state.streams.find(stream => stream.id === state.maximizedStreamId);
-  if (maximized) return [{ id: maximized.id, display: "stream", width: stage > 0 ? stage : maximized.width ?? STREAM_DEFAULT_WIDTH, separator: false }];
-  const expanded = state.streams.filter(stream => stream.desiredExpanded);
-  const lastStream = state.streams.at(-1);
-  // The host owns resizing at the outer edge; only internal boundaries need handles.
-  const separatorCount = expanded.length - (lastStream?.desiredExpanded ? 1 : 0);
-  const widths = new Map<string, number>();
-  if (stage <= 0) {
-    for (const stream of expanded) widths.set(stream.id, stream.width ?? STREAM_DEFAULT_WIDTH);
-  } else {
-    const base = stage - (state.streams.length - expanded.length) * STREAM_SPINE_WIDTH - separatorCount * STREAM_SEPARATOR_SIZE;
-    if (expanded.length === 1) widths.set(expanded[0].id, Math.max(0, base));
-    else if (expanded.length > 1) {
-      const flexible = expanded.filter(stream => stream.width === null);
-      const remaining = base - expanded.reduce((sum, stream) => sum + (stream.width ?? 0), 0);
-      const share = flexible.length > 0 ? Math.max(STREAM_MIN_WIDTH, Math.floor(remaining / flexible.length)) : 0;
-      for (const stream of expanded) widths.set(stream.id, stream.width ?? share);
-      const spare = base - [...widths.values()].reduce((sum, width) => sum + width, 0);
-      const last = expanded[expanded.length - 1];
-      if (spare > 0) widths.set(last.id, widths.get(last.id)! + spare);
-    }
-  }
-  return state.streams.map((stream): StreamLayoutItem => stream.desiredExpanded
-    ? { id: stream.id, display: "stream", width: widths.get(stream.id)!, separator: stream.id !== lastStream?.id }
-    : { id: stream.id, display: "spine", width: STREAM_SPINE_WIDTH, separator: false });
-}
-
-/** Strip width that shows every stream at its own width without stretching any of them. */
-export function resolveRequiredStripWidth(state: Pick<LeafStreamState, "streams" | "maximizedStreamId">): number {
-  return resolveStreamLayout({ ...state, width: 0 })
-    .reduce((sum, item) => sum + item.width + (item.separator ? STREAM_SEPARATOR_SIZE : 0), 0);
+/** Reconstruct V1's expanded row. Unsized columns share space and the last absorbs the remainder. */
+function legacyExpandedWidths(streams: StreamSnapshot[], stageWidth: number): Map<string, number> {
+  const available = stageWidth - (streams.length - 1) * GAP;
+  const flexible = streams.filter(stream => stream.width === null).length;
+  const fixed = streams.reduce((sum, stream) => sum + (stream.width ?? 0), 0);
+  const share = stageWidth > 0 && flexible > 0
+    ? Math.max(MIN_WIDTH, Math.floor((available - fixed) / flexible))
+    : STREAM_DEFAULT_WIDTH;
+  const widths = new Map(streams.map(stream => [stream.id, stream.width ?? share]));
+  const spare = available - [...widths.values()].reduce((sum, width) => sum + width, 0);
+  const last = streams.at(-1);
+  if (last && spare > 0) widths.set(last.id, widths.get(last.id)! + spare);
+  return widths;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -450,7 +450,7 @@ function readStream(value: unknown, settings: PluginSettings): StreamSnapshot | 
   };
 }
 
-export type DesktopLeafDecodeResult = { kind: "legacy" } | { kind: "ready"; state: DesktopLeafStateV1 }
+export type DesktopLeafDecodeResult = { kind: "legacy" } | { kind: "ready"; state: DesktopLeafStateV1 | DesktopLeafStateV2 }
   | { kind: "unsupported"; raw: Record<string, unknown> };
 
 /** Decode shape only. Unavailable vault sources remain authored stream references. */
@@ -458,7 +458,7 @@ export function decodeDesktopLeafState(value: unknown, settings: PluginSettings)
   if (value === undefined || value === null || (isRecord(value) && Object.keys(value).length === 0)) return { kind: "legacy" };
   const raw = isRecord(value) ? value : { value };
   const unsupported = (): DesktopLeafDecodeResult => ({ kind: "unsupported", raw });
-  if (raw.version !== 1 || !Array.isArray(raw.streams) || !isRecord(raw.navigation)
+  if ((raw.version !== 1 && raw.version !== 2) || !Array.isArray(raw.streams) || !isRecord(raw.navigation)
     || (raw.currentStreamId !== null && typeof raw.currentStreamId !== "string")) return unsupported();
   const streams: StreamSnapshot[] = [];
   const ids = new Set<string>();
@@ -467,6 +467,8 @@ export function decodeDesktopLeafState(value: unknown, settings: PluginSettings)
     if (!stream || ids.has(stream.id)) return unsupported();
     streams.push(stream); ids.add(stream.id);
   }
+  const layout = raw.layout;
+  if (raw.version === 2 && !validTiles(layout, ids)) return unsupported();
   if (typeof raw.currentStreamId === "string" && !ids.has(raw.currentStreamId)) return unsupported();
   if (raw.currentStreamId !== null) streams.find(stream => stream.id === raw.currentStreamId)!.desiredExpanded = true;
   // Maximizing is a view preference: an unknown target degrades to the tiled strip.
@@ -481,7 +483,7 @@ export function decodeDesktopLeafState(value: unknown, settings: PluginSettings)
   return {
     kind: "ready",
     state: {
-      version: 1, streams, currentStreamId: raw.currentStreamId, maximizedStreamId,
+      ...(raw.version === 2 ? {version: 2 as const, layout: layout as Tile | null} : {version: 1 as const}), streams, currentStreamId: raw.currentStreamId, maximizedStreamId,
       navigation: {
         width: Math.max(NAV_PANE_WIDTH_MIN, Math.min(NAV_PANE_WIDTH_MAX, finite(navigation.width, settings.navPaneWidth))),
         collapsed: typeof navigation.collapsed === "boolean" ? navigation.collapsed : settings.navPaneCollapsed,

@@ -1,6 +1,6 @@
 # Card Workspace
 
-桌面端支持独立卡片流、窗格内共享导航、平铺对照，以及移动/复制到新的 Obsidian 窗格。详见[桌面多卡片流](docs/multi-card-stream.md)。
+桌面端支持独立卡片流、窗格内共享导航、可嵌套的上下和左右分屏对照，以及移动/复制到新的 Obsidian 窗格。详见[桌面多卡片流](docs/multi-card-stream.md)。
 
 [English](README.md)
 

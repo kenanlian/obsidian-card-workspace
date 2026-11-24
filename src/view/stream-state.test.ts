@@ -1,6 +1,7 @@
+import { tileGeometry, tileKey } from "./stream-tiles";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../settings";
-import { LeafStreamController, decodeDesktopLeafState, resolveRequiredStripWidth, resolveStreamLayout, type DesktopLeafStateV1, type LeafNavigationState, type StreamSnapshot } from "./stream-state";
+import { LeafStreamController, decodeDesktopLeafState, type DesktopLeafStateV1, type LeafNavigationState, type StreamSnapshot } from "./stream-state";
 
 function stream(id: string, lastActive = 0): StreamSnapshot {
   return {
@@ -49,54 +50,43 @@ describe("LeafStreamController", () => {
     expect(controller.getState()).toMatchObject({ maximizedStreamId: null, currentStreamId: "c", visibleIds: ["a", "c"] });
   });
 
-  it("freezes rendered widths when adding, starts new streams as one column and stretches only the final stream", () => {
+  it("splits a group across its full width and preserves nested proportions and identities", () => {
     const controller = new LeafStreamController([stream("a")]);
-    expect(resolveStreamLayout(controller.getState())).toEqual([{ id: "a", display: "stream", width: 320, separator: false }]);
-    controller.setSize(1000, 800);
-    expect(resolveStreamLayout(controller.getState())).toEqual([{ id: "a", display: "stream", width: 1000, separator: false }]);
     controller.add(stream("b"));
-    expect(controller.getState().streams.map(value => [value.id, value.width])).toEqual([["a", 1000], ["b", 320]]);
-    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([1000, 320]);
-    expect(resolveRequiredStripWidth(controller.getState())).toBe(1000 + 320 + 6);
-    controller.setSize(1400, 800);
-    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([1000, 394]);
-    controller.setExpanded("a", false);
-    expect(resolveStreamLayout(controller.getState())).toEqual([
-      { id: "a", display: "spine", width: 28, separator: false }, { id: "b", display: "stream", width: 1372, separator: false },
-    ]);
-    controller.toggleMaximized("b");
-    expect(resolveStreamLayout(controller.getState())).toEqual([{ id: "b", display: "stream", width: 1400, separator: false }]);
+    const row = controller.getState().layout!;
+    controller.add(stream("c"), {target:tileKey(row), side:"bottom"});
+    controller.setSize(1006,806);
+    const geometry = () => {
+      const state = controller.getState();
+      return tileGeometry(state.layout, new Set(state.streams.filter(s => !s.desiredExpanded).map(s => s.id)),state.width,state.height);
+    };
+    const region = (id: string) => geometry().regions.find(r => r.stream === id);
+    expect(region("a")).toMatchObject({width:500,height:400});
+    expect(region("c")).toMatchObject({x:0,y:406,width:1006,height:400});
+    controller.resizeSplit(row.id,0.3);
+    expect(region("a")?.width).toBe(300);
+    controller.setExpanded("c",false);
+    expect(region("c")?.height).toBe(28);
+    controller.select("c");
+    const saved = controller.toJSON(navigation());
+    controller.remove("c"); controller.reopen();
+    expect(controller.getState().layout).toEqual(saved.version === 2 && saved.layout);
+    controller.place("c",{target:"stream:b",side:"top"});
+    expect(region("a")?.height).toBe(806);
+    expect(region("b")?.y).toBe(406);
+    controller.restore(saved);
+    expect(region("c")?.width).toBe(1006);
+    expect(decodeDesktopLeafState(saved,DEFAULT_SETTINGS).kind).toBe("ready");
+    expect(decodeDesktopLeafState({...saved, layout:row},DEFAULT_SETTINGS).kind).toBe("unsupported");
   });
 
-  it("shares unsized space above the minimum and overflows instead of shrinking", () => {
-    const controller = new LeafStreamController([stream("a"), stream("b"), stream("c")]);
-    controller.setSize(1000, 800);
-    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([329, 329, 330]);
-    controller.setSize(500, 800);
-    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([240, 240, 240]);
-    controller.setSize(0, 0);
-    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([320, 320, 320]);
-    const compact = new LeafStreamController([stream("only")]);
-    compact.setSize(200, 600);
-    expect(resolveStreamLayout(compact.getState())[0].width).toBe(200);
-  });
-
-  it("keeps resize handles inside the strip after reordering, collapsing and closing streams", () => {
-    const controller = new LeafStreamController([stream("a"), stream("b"), stream("c")]);
-    controller.setSize(1200, 800);
-    const boundaries = () => resolveStreamLayout(controller.getState()).map(item => [item.id, item.separator]);
-    expect(boundaries()).toEqual([["a", true], ["b", true], ["c", false]]);
-    controller.move("c", 0);
-    expect(boundaries()).toEqual([["c", true], ["a", true], ["b", false]]);
-    controller.setExpanded("b", false);
-    expect(boundaries()).toEqual([["c", true], ["a", true], ["b", false]]);
-    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([580, 580, 28]);
-    controller.remove("b");
-    expect(boundaries()).toEqual([["c", true], ["a", false]]);
-    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([597, 597]);
-    controller.remove("a");
-    expect(boundaries()).toEqual([["c", false]]);
-    expect(resolveRequiredStripWidth(controller.getState())).toBe(320);
+  it("migrates v1 widths on measurement, then keeps the split ratio", () => {
+    const controller = new LeafStreamController();
+    controller.restore(persisted([{...stream("a"),width:300},stream("b")]));
+    controller.setSize(1006,600);
+    expect(controller.getState().layout).toMatchObject({axis:"x",ratio:0.3});
+    controller.setSize(1506,600);
+    expect(controller.getState().layout).toMatchObject({ratio:0.3});
   });
 
   it("uses the next effective tile then the previous tile when collapsing or closing current", () => {
@@ -165,7 +155,7 @@ describe("LeafStreamController", () => {
     controller.select("a");
     controller.setExpanded("a", true);
     controller.setSize(0, 0);
-    controller.setWidth("a", Number.NaN);
+    controller.resizeSplit("missing", Number.NaN);
     controller.move("a", 0);
     controller.reorder("a", -1);
     expect(listener).toHaveBeenCalledTimes(1);
@@ -201,20 +191,7 @@ describe("LeafStreamController", () => {
     controller.remove("b");
     controller.add(stream("b"));
     expect(controller.reopen()?.id).toBe("b-1");
-    expect(controller.getState().streams.map(value => value.id)).toEqual(["b-1", "b"]);
-  });
-
-  it("resizes one stream without shrinking its neighbours and clamps widths", () => {
-    const controller = new LeafStreamController([stream("a"), stream("b"), stream("c")]);
-    controller.setSize(1200, 800);
-    controller.setWidth("a", 500);
-    controller.setWidth("b", 100);
-    expect(controller.getState().streams.map(value => value.width)).toEqual([500, 240, null]);
-    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([500, 240, 448]);
-    controller.setWidth("a", 99999);
-    expect(resolveStreamLayout(controller.getState()).map(item => item.width)).toEqual([4000, 240, 240]);
-    controller.setWidth("missing", 300);
-    expect(controller.getState().streams.map(value => value.width)).toEqual([4000, 240, null]);
+    expect(controller.getState().streams.map(value => value.id)).toEqual(["b", "b-1"]);
   });
 
   it("atomically rewrites live and recently closed sources and anchors without changing identities", () => {

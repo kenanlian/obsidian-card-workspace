@@ -87,17 +87,19 @@ function createInitialPanelState(): PanelModelState {
 
 
 function entry(id: string, index: number, overrides: Partial<StreamPanelEntry> = {}): StreamPanelEntry {
- return { id, title: id, customTitle: null, ordinal: null, display: "stream", width: 300, separator: true, current: index === 0, pending: false, panelModel: createPanelModel(createInitialPanelState()), props: {}, ...overrides };
+ return { id, title: id, customTitle: null, ordinal: null, display: "stream", current: index === 0, pending: false, panelModel: createPanelModel(createInitialPanelState()), props: {}, ...overrides };
 }
 function createWorkspace(): StreamPanelState {
- const entries = ["one", "two", "three"].map((id, index) => entry(id, index, { separator: index < 2 }));
- return { entries, currentStreamId: "one", maximizedStreamId: null, navigationVisible: true, singlePane: false, navPanelModel: entries[0].panelModel, navProps: {}, labels: getStreamUiStrings("en"), recentlyClosedCount: 1, unsupported: false };
+ const entries = ["one", "two", "three"].map((id, index) => entry(id, index));
+ return { layout: { kind: "split", id:"rows", axis:"y", ratio:0.5, first:{
+   kind:"split", id:"cols", axis:"x", ratio:0.5, first:{kind:"stream",id:"one"},second:{kind:"stream",id:"two"}
+ },second:{kind:"stream",id:"three"}}, entries, currentStreamId: "one", maximizedStreamId: null, navigationVisible: true, singlePane: false, navPanelModel: entries[0].panelModel, navProps: {}, labels: getStreamUiStrings("en"), recentlyClosedCount: 1, unsupported: false };
 }
 type RenderProps = {
  model: ReturnType<typeof createStreamPanelModel>; onSelect?: (id: string) => void;
  onCommand?: (id: string, command: import("./stream-panel-model").StreamCommand, anchor?: HTMLElement) => void;
- onResize?: (width: number, height: number) => void; onStreamWidth?: (id: string, width: number) => void;
- onMove?: (id: string, index: number) => void; onCreate?: () => void; onReopen?: () => void; onToggleNav?: () => void;
+ onResize?: (width: number, height: number) => void; onSplitResize?: (id: string, width: number) => void;
+ onPlace?: (id: string, place: import("./stream-tiles").Placement) => void; onCreate?: () => void; onReopen?: () => void; onToggleNav?: () => void;
 };
 let components: ReturnType<typeof mount>[] = [];
 async function render(props: RenderProps) {
@@ -114,7 +116,13 @@ function placeItems(target: HTMLElement): void {
  }
 }
 beforeEach(() => {
- vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+ vi.stubGlobal("ResizeObserver", class {
+  constructor(private readonly report: (entries: { contentRect: DOMRect }[]) => void) {}
+  observe(node: HTMLElement) {
+   if (node.classList.contains("fce-stream-stage")) this.report([{ contentRect: new DOMRect(0, 0, 1100, 700) }]);
+  }
+  disconnect() {}
+ });
  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1100);
  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(700);
 });
@@ -152,13 +160,15 @@ describe("StreamWorkspacePanel", () => {
  });
  it("shows a custom or numbered title in the toolbar and only offers close with several streams", async () => {
   const state = createWorkspace();
-  state.entries = [entry("one", 0, { customTitle: "Reading", separator: false })];
+  state.entries = [entry("one", 0, { customTitle: "Reading" })];
   const model = createStreamPanelModel(state); const target = await render({ model });
   expect(target.querySelector(".fce-stream-switcher .fce-toolbar-scope-text")?.textContent).toBe("Reading");
   expect(target.querySelector(".fce-stream-close")).toBeNull();
+  expect(target.querySelector(".fce-stream-grip")).toBeNull();
   expect(target.querySelector(".fce-stream-stage.has-multiple")).toBeNull();
   model.setState({ ...state, entries: [entry("one", 0, { ordinal: 1 }), entry("two", 1, { ordinal: 2 })] }); await tick();
   expect(target.querySelector('[data-stream-id="two"] .fce-stream-switcher .fce-toolbar-scope-text')?.textContent).toBe("notes (2)");
+  expect(target.querySelectorAll(".fce-stream-grip")).toHaveLength(2);
   expect(target.querySelectorAll(".fce-stream-close")).toHaveLength(2);
  });
  it("freezes pending content and keeps a menu and close control for streams without content", async () => {
@@ -175,32 +185,34 @@ describe("StreamWorkspacePanel", () => {
   expect(onCommand).toHaveBeenLastCalledWith("two", "close");
  });
  it("resizes one stream from its splitter and reports available stage measurements", async () => {
-  const onResize = vi.fn(), onStreamWidth = vi.fn(), onShellResize = vi.fn();
+  const onResize = vi.fn(), onSplitResize = vi.fn(), onShellResize = vi.fn();
   const state = createWorkspace(); state.navProps = { onShellResize };
-  const target = await render({ model: createStreamPanelModel(state), onResize, onStreamWidth });
+  const target = await render({ model: createStreamPanelModel(state), onResize, onSplitResize });
   expect(onShellResize).toHaveBeenCalledWith(1100); expect(onResize).toHaveBeenCalledWith(1100, 700);
   const splitters = target.querySelectorAll<HTMLElement>('[role="separator"].fce-stream-splitter');
   expect(splitters).toHaveLength(2);
-  expect(target.querySelector(".fce-stream-stage")!.lastElementChild?.getAttribute("data-stream-id")).toBe("three");
-  splitters[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })); expect(onStreamWidth).toHaveBeenLastCalledWith("one", 316);
-  splitters[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", shiftKey: true, bubbles: true })); expect(onStreamWidth).toHaveBeenLastCalledWith("two", 252);
+  splitters[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  expect(onSplitResize).toHaveBeenLastCalledWith("cols", 563/1094);
+  splitters[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", shiftKey: true, bubbles: true }));
+  expect(onSplitResize).toHaveBeenLastCalledWith("rows", 299/694);
  });
  it("reorders by dragging a stream title and swallows the click that ends the drag", async () => {
-  const onMove = vi.fn(), onCommand = vi.fn();
-  const target = await render({ model: createStreamPanelModel(createWorkspace()), onMove, onCommand });
+  const onPlace = vi.fn(), onCommand = vi.fn();
+  const target = await render({ model: createStreamPanelModel(createWorkspace()), onPlace, onCommand });
   placeItems(target);
   const handle = target.querySelector<HTMLButtonElement>('[data-stream-id="one"] .fce-stream-switcher')!;
   handle.dispatchEvent(pointer("pointerdown", { clientX: 10 }));
+  const stage = target.querySelector<HTMLElement>(".fce-stream-stage")!;
+  stage.getBoundingClientRect = () => new DOMRect(0,0,1100,700);
   document.dispatchEvent(pointer("pointermove", { clientX: 500 })); await tick();
-  expect(target.querySelector('[data-stream-id="two"]')!.classList.contains("is-drop-after")).toBe(false);
-  expect(target.querySelector('[data-stream-id="three"]')!.classList.contains("is-drop-before")).toBe(true);
+  expect(target.querySelector(".fce-stream-drop-preview")).not.toBeNull();
   document.dispatchEvent(pointer("pointerup", { clientX: 500 }));
-  expect(onMove).toHaveBeenCalledExactlyOnceWith("one", 1);
+  expect(onPlace).toHaveBeenCalledExactlyOnceWith("one", {target:"split:rows",side:"top"});
   handle.click(); expect(onCommand).not.toHaveBeenCalled();
   handle.dispatchEvent(pointer("pointerdown", { clientX: 10 }));
   document.dispatchEvent(pointer("pointerup", { clientX: 12 }));
   handle.click(); expect(onCommand).toHaveBeenLastCalledWith("one", "menu", handle);
-  expect(onMove).toHaveBeenCalledOnce();
+  expect(onPlace).toHaveBeenCalledOnce();
  });
  it("reveals programmatically selected streams but not streams chosen by pointer", async () => {
   const model = createStreamPanelModel(createWorkspace());
@@ -224,6 +236,7 @@ describe("StreamWorkspacePanel", () => {
   const model = createStreamPanelModel(state), onCreate = vi.fn(), onReopen = vi.fn(), onToggleNav = vi.fn();
   const target = await render({ model, onCreate, onReopen, onToggleNav });
   expect(target.querySelectorAll(".fce-stream-panel")).toHaveLength(1);
+  expect(target.querySelector(".fce-stream-grip")).toBeNull();
   expect(target.querySelector(".fce-stream-close")).not.toBeNull();
   model.setState({ ...state, entries: [], navigationVisible: false }); await tick();
   const buttons = Array.from(target.querySelectorAll<HTMLButtonElement>(".fce-stream-empty button"));

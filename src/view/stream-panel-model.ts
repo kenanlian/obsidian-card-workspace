@@ -1,3 +1,4 @@
+import type { Tile } from "./stream-tiles";
 import type { PanelModel } from "./panel-model";
 import type { StreamUiStrings } from "./stream-ui-strings";
 export interface StreamPanelEntry {
@@ -9,8 +10,6 @@ export interface StreamPanelEntry {
   /** Distinguishes unnamed streams over the same source. */
   ordinal: number | null;
   display: "stream" | "spine" | "hidden";
-  width: number;
-  separator: boolean;
   current: boolean;
   pending: boolean;
   error?: string;
@@ -18,6 +17,7 @@ export interface StreamPanelEntry {
   props: Record<string, unknown>;
 }
 export interface StreamPanelState {
+  layout: Tile | null;
   entries: readonly StreamPanelEntry[];
   currentStreamId: string | null;
   maximizedStreamId: string | null;

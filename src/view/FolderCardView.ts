@@ -1,3 +1,4 @@
+import { rewrite, tileGeometry, tiles, tileKey, type Placement } from "./stream-tiles";
 import { ItemView, Menu, Notice, TFolder, type HoverParent, type HoverPopover, type WorkspaceLeaf, type ViewStateResult } from "obsidian";
 import { mount, unmount } from "svelte";
 import type CardWorkspacePlugin from "../main";
@@ -5,7 +6,7 @@ import { normalizeSettings } from "../settings";
 import { CARD_WORKSPACE_ICON } from "../icons";
 import { builtinCategoryIcon } from "../icon-config";
 import { CardStreamRuntime } from "./CardStreamRuntime";
-import { LeafStreamController, decodeDesktopLeafState, resolveRequiredStripWidth, resolveStreamLayout, type LeafNavigationState, type StreamSnapshot } from "./stream-state";
+import { LeafStreamController, decodeDesktopLeafState, type LeafNavigationState, type StreamSnapshot } from "./stream-state";
 import { createStreamBrowseState } from "./stream-browse-state";
 import { createStreamPanelModel, type StreamCommand, type StreamPanelModel } from "./stream-panel-model";
 import { getStreamUiStrings } from "./stream-ui-strings";
@@ -110,7 +111,7 @@ export class FolderCardView extends ItemView implements HoverParent {
       isCurrent: () => this.currentRuntime === null,
       getNavigationSnapshot: () => this.currentRuntime?.panelModel.getState().nav,
     } : {});
-    this.streamPanelModel = createStreamPanelModel({ entries: [], currentStreamId: null, maximizedStreamId: null,
+    this.streamPanelModel = createStreamPanelModel({ layout: null, entries: [], currentStreamId: null, maximizedStreamId: null,
       navigationVisible: this.navLayout.getNavVisible(), singlePane: false, navPanelModel: this.fallback.panelModel,
       navProps: {}, labels: getStreamUiStrings(plugin.getUiLanguage()), recentlyClosedCount: 0, unsupported: false });
     this.stopStreams = this.desktop ? this.streams.subscribe(() => this.syncStreams()) : null;
@@ -250,7 +251,7 @@ export class FolderCardView extends ItemView implements HoverParent {
   }
   private publishStreams(): void {
     if (!this.desktop || !this.streamPanelModel || this.stopped) return;
-    const state = this.streams.getState(), layout = new Map(resolveStreamLayout(state).map(item => [item.id, item]));
+    const state = this.streams.getState();
     const nav = this.navigationRuntime, descriptions = this.describeStreams(state.streams);
     const requireCurrent = (): CardStreamRuntime | null => {
       const runtime = this.currentRuntime;
@@ -267,11 +268,11 @@ export class FolderCardView extends ItemView implements HoverParent {
       onToggleNavPane: () => { void this.navLayout.onToggleNavPane(); }, onShellResize: (width: number) => this.navLayout.onShellResize(width),
       newStreamGesture: true };
     this.streamPanelModel.setState({
-      entries: state.streams.map(stream => {
-        const entry = this.runtimes.get(stream.id), item = layout.get(stream.id), description = descriptions.get(stream.id)!;
+      layout: state.layout, entries: state.streams.map(stream => {
+        const entry = this.runtimes.get(stream.id), description = descriptions.get(stream.id)!;
         return {
           id: stream.id, title: description.title, customTitle: stream.title, ordinal: description.ordinal,
-          display: item?.display ?? "hidden" as const, width: item?.width ?? 0, separator: item?.separator ?? false,
+          display: state.maximizedStreamId && state.maximizedStreamId !== stream.id ? "hidden" : stream.desiredExpanded ? "stream" : "spine",
           current: stream.id === state.currentStreamId, pending: this.pending.has(stream.id) || this.transferring.has(stream.id),
           error: this.failures.get(stream.id), panelModel: entry?.runtime.panelModel ?? null, props: entry?.props ?? {},
         };
@@ -340,8 +341,8 @@ export class FolderCardView extends ItemView implements HoverParent {
       onCommand: (id: string, command: StreamCommand, anchor?: HTMLElement) => this.handleStreamCommand(id, command, anchor),
       onCreate: () => this.openNewStreamPicker(), onReopen: () => this.reopenStream(),
       onResize: (width: number, height: number) => this.streams.setSize(width, height),
-      onStreamWidth: (id: string, width: number) => this.streams.setWidth(id, width),
-      onMove: (id: string, index: number) => this.streams.move(id, index),
+      onSplitResize: (id: string, ratio: number) => this.streams.resizeSplit(id, ratio),
+      onPlace: (id: string, place: Placement) => this.placeStream(id, place),
       onToggleNav: () => { void this.navLayout.onToggleNavPane(); },
     } });
     this.navLayout.refreshFolderTreeState();
@@ -465,12 +466,13 @@ export class FolderCardView extends ItemView implements HoverParent {
       images: { ...diagnostics.images, objectUrls: [...this.runtimes.values()].reduce((count, entry) => count + entry.runtime.getRuntimeDiagnostics().images.objectUrls, 0) },
       streams: { total: this.streams.getState().streams.length, active: this.runtimes.size, transferring: this.transferring.size } };
   }
-  async createStream(choice: StreamSourceChoice): Promise<string | null> {
+  async createStream(choice: StreamSourceChoice, place?: Placement): Promise<string | null> {
     if (!this.desktop || this.stopped || this.unsupported || this.stagedTransfer) return null;
     this.legacySeedPending = false; this.readyToLoad = true;
     const snapshot = this.makeSnapshot(choice.scope);
     if (choice.filter) snapshot.browse.filter = choice.filter;
-    this.streams.add(snapshot); this.growToFit(); this.navLayout.returnToCardsViewIfSinglePane();
+    if (place && !tiles(this.streams.getState().layout).some(t => tileKey(t) === place.target)) return null;
+    this.streams.add(snapshot, place); this.growToFit(); this.navLayout.returnToCardsViewIfSinglePane();
     await this.ensureRuntime(snapshot.id); return snapshot.id;
   }
   reopenStream(): void {
@@ -481,7 +483,7 @@ export class FolderCardView extends ItemView implements HoverParent {
   private growToFit(): void {
     const state = this.streams.getState();
     if (state.width <= 0) return;
-    const deficit = resolveRequiredStripWidth(state) - state.width;
+    const deficit = tileGeometry(state.layout, new Set(state.streams.filter(s => !s.desiredExpanded).map(s => s.id)), 0, 0).minWidth - state.width;
     const workspace = this.app.workspace, root = this.leaf.getRoot?.();
     if (deficit <= 0 || !root || (root !== workspace.leftSplit && root !== workspace.rightSplit)) return;
     // Dock sizing is not public API: probe it and keep the scrollable strip when it is absent.
@@ -491,7 +493,7 @@ export class FolderCardView extends ItemView implements HoverParent {
     const next = Math.min(win.innerWidth - MAIN_WORKSPACE_MIN_WIDTH, dock.size + deficit);
     if (next > dock.size) (dock.setSize as (size: number) => void).call(dock, next);
   }
-  openNewStreamPicker(): void {
+  openNewStreamPicker(place?: Placement): void {
     if (this.unsupported) {
       void this.plugin.createCardStreamLeaf(this.leaf).then(async leaf => {
         await leaf.setViewState({ type: FOLDER_CARD_VIEW, active: true });
@@ -500,9 +502,9 @@ export class FolderCardView extends ItemView implements HoverParent {
       }).catch(error => console.warn("[Card Workspace] Recovery pane failed", error));
       return;
     }
-    new StreamSourcePicker(this.app, this.plugin, choice => { void this.createStream(choice); }).open();
+    new StreamSourcePicker(this.app, this.plugin, choice => { void this.createStream(choice, place); }).open();
   }
-  handleStreamCommand(id: string, command: StreamCommand, anchor?: HTMLElement): void {
+  handleStreamCommand(id: string, command: StreamCommand, anchor?: HTMLElement, place?: Placement): void {
     if (this.transferring.has(id) || this.stopped) return;
     this.legacySeedPending = false;
     this.capture(id);
@@ -517,13 +519,47 @@ export class FolderCardView extends ItemView implements HoverParent {
       case "duplicate": {
         const duplicate = { ...snapshot, id: nextStreamId(), title: snapshot.title ? `${snapshot.title} (2)` : null,
           linksPinned: snapshot.scope.kind === "links" ? true : snapshot.linksPinned, width: null };
-        this.streams.add(duplicate); this.growToFit(); break;
+        this.streams.add(duplicate, place ?? { target: "stream:" + id, side: "right" }); this.growToFit(); break;
       }
       case "rename": new StreamNameModal(this.app, { strings: this.plugin.getUiStrings(), title: labels.rename, name: snapshot.title,
         sourceLabel: this.sourceLabel(snapshot.scope), language: this.plugin.getUiLanguage(), submit: title => { this.streams.update(id, { title }); } }).open(); break;
       case "move-to-pane": case "copy-to-pane": void this.transferStream(id, command === "copy-to-pane"); break;
       case "menu": this.openStreamMenu(id, anchor); break;
     }
+  }
+  private placeStream(id: string, place: Placement): void {
+    if (this.transferring.has(id) || this.stopped) return;
+    this.streams.place(id, place);
+    this.growToFit();
+  }
+
+  private choosePlacement(id: string, anchor: HTMLElement, action: "move" | "create" | "duplicate"): void {
+    const state = this.streams.getState();
+    const titles = this.describeStreams(state.streams);
+    const labels = getStreamUiStrings(this.plugin.getUiLanguage());
+    const show = (menu: Menu) => {
+      const rect = anchor.getBoundingClientRect();
+      menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
+    };
+    const targets = new Menu();
+    const available = state.layout && action === "move" ? rewrite(state.layout, "stream:" + id, () => null) : state.layout;
+    for (const tile of tiles(available)) {
+      const members = tiles(tile).filter(t => t.kind === "stream");
+      const title = members.map(t => titles.get(t.id)?.title).join(" + ");
+      targets.addItem(item => item.setTitle(title).setIcon(tile.kind === "split" ? "panels-top-left" : "square").onClick(() => {
+        const directions = new Menu();
+        for (const side of ["left", "right", "top", "bottom"] as const) {
+          directions.addItem(item => item.setTitle(labels.sides[side]).onClick(() => {
+            const place: Placement = { target: tileKey(tile), side };
+            if (action === "move") this.placeStream(id, place);
+            else if (action === "create") this.openNewStreamPicker(place);
+            else this.handleStreamCommand(id, "duplicate", undefined, place);
+          }));
+        }
+        show(directions);
+      }));
+    }
+    show(targets);
   }
   /** One menu switches streams and holds the stream commands that no longer need permanent controls. */
   private openStreamMenu(id: string, anchor?: HTMLElement): void {
@@ -544,14 +580,17 @@ export class FolderCardView extends ItemView implements HoverParent {
     menu.addSeparator();
     add(labels.create, "plus", () => this.openNewStreamPicker());
     add(labels.duplicate, "columns-2", () => this.handleStreamCommand(id, "duplicate"));
+    if (anchor) {
+      add(labels.createAt, "plus", () => this.choosePlacement(id, anchor, "create"));
+      add(labels.splitAt, "panels-top-left", () => this.choosePlacement(id, anchor, "duplicate"));
+    }
     add(labels.reopen, "rotate-ccw", () => this.reopenStream(), state.recentlyClosedCount === 0);
     menu.addSeparator();
     if (state.streams.length > 1) {
       const maximized = state.maximizedStreamId === id;
       add(maximized ? labels.restore : labels.maximize, maximized ? "minimize-2" : "maximize-2", () => this.handleStreamCommand(id, "maximize"));
       add(labels.collapse, "fold-horizontal", () => this.handleStreamCommand(id, "collapse"));
-      add(labels.moveLeft, "arrow-left", () => this.handleStreamCommand(id, "move-left"), index === 0);
-      add(labels.moveRight, "arrow-right", () => this.handleStreamCommand(id, "move-right"), index === state.streams.length - 1);
+      if (anchor) add(labels.moveAt, "move", () => this.choosePlacement(id, anchor, "move"));
     }
     add(labels.rename, "pencil", () => this.handleStreamCommand(id, "rename"));
     add(labels.moveToPane, "external-link", () => this.handleStreamCommand(id, "move-to-pane"));
