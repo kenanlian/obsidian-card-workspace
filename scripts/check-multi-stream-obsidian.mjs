@@ -161,7 +161,8 @@ async function checkRestore(page) {
 
 async function runLane(lane, revision) {
   const { profile, vault } = await setup(await buildLane(lane, revision));
-  const child = spawn("/usr/bin/sandbox-exec", ["-p", offline, binary, "--user-data-dir=" + profile, "--remote-debugging-address=127.0.0.1",
+  // Chromium cannot nest its renderer seatbelt inside this macOS network sandbox.
+  const child = spawn("/usr/bin/sandbox-exec", ["-p", offline, binary, "--no-sandbox", "--user-data-dir=" + profile, "--remote-debugging-address=127.0.0.1",
     "--remote-debugging-port=0", "--disable-background-networking", "--lang=en-US"], { stdio: ["ignore", "ignore", "pipe"] });
   let stderr = "";
   child.stderr.on("data", chunk => { stderr = (stderr + chunk).slice(-3000); });
